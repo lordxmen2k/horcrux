@@ -1,5 +1,6 @@
 //! ReAct Agent Loop - Reasoning and Acting
 
+use super::compaction::{CompactionConfig, CompactionManager};
 use super::llm::{ChatMessage, LlmClient, ToolCall};
 use super::memory::ConversationMemory;
 use crate::tools::{ToolRegistry, ToolResult};
@@ -10,12 +11,18 @@ use tracing::{debug, error, info, warn};
 /// Maximum number of tool call iterations to prevent infinite loops
 const MAX_ITERATIONS: usize = 15;
 
+/// Maximum messages to keep in context before compacting
+const MAX_CONTEXT_MESSAGES: usize = 30;
+/// Target messages after compaction
+const TARGET_CONTEXT_MESSAGES: usize = 10;
+
 /// ReAct Agent
 pub struct ReActAgent {
     llm: LlmClient,
     tools: ToolRegistry,
     memory: ConversationMemory,
     system_prompt: String,
+    compaction_manager: CompactionManager,
 }
 
 impl ReActAgent {
@@ -25,11 +32,22 @@ impl ReActAgent {
         memory: ConversationMemory,
     ) -> Self {
         let system_prompt = build_system_prompt(&tools);
+        
+        // Set up compaction manager (simple mode, no LLM needed)
+        let compaction_config = CompactionConfig {
+            max_messages: MAX_CONTEXT_MESSAGES,
+            target_messages: TARGET_CONTEXT_MESSAGES,
+            extract_facts: false, // Disable LLM-based fact extraction for simplicity
+            max_tokens_estimate: 6000,
+        };
+        let compaction_manager = CompactionManager::new(compaction_config);
+        
         Self {
             llm,
             tools,
             memory,
             system_prompt,
+            compaction_manager,
         }
     }
 
@@ -61,8 +79,29 @@ impl ReActAgent {
             let llm_response = match self.llm.chat(&messages, Some(&tool_definitions)).await {
                 Ok(r) => r,
                 Err(e) => {
-                    error!("LLM request failed: {}", e);
-                    return Ok(format!("Error communicating with LLM: {}", e));
+                    let error_msg = e.to_string();
+                    
+                    // Check if it's a token limit error
+                    if error_msg.contains("token limit") || 
+                       error_msg.contains("context length") ||
+                       error_msg.contains("exceeded model") {
+                        warn!("Token limit exceeded ({} messages). Compacting conversation...", messages.len());
+                        
+                        // Compact the conversation by summarizing older messages
+                        match self.compact_conversation_and_retry(Some(&tool_definitions[..])).await {
+                            Ok(response) => {
+                                info!("Successfully recovered from token limit error");
+                                response
+                            }
+                            Err(compact_err) => {
+                                error!("Failed to compact conversation: {}", compact_err);
+                                return Ok(format!("Conversation became too long and I couldn't compact it. Try starting a fresh conversation with 'clear' or 'new'."));
+                            }
+                        }
+                    } else {
+                        error!("LLM request failed: {}", e);
+                        return Ok(format!("Error communicating with LLM: {}", e));
+                    }
                 }
             };
 
@@ -112,15 +151,82 @@ impl ReActAgent {
         Ok(response)
     }
 
-    /// Build the message list for the LLM
-    async fn build_messages(&self) -> Result<Vec<ChatMessage>> {
+    /// Build the message list for the LLM with proactive compaction
+    async fn build_messages(&mut self) -> Result<Vec<ChatMessage>> {
         let mut messages = vec![ChatMessage::system(&self.system_prompt)];
         
         // Add conversation history
-        let history = self.memory.get_messages(50).await?; // Last 50 messages
-        messages.extend(history);
+        let history = self.memory.get_messages(MAX_CONTEXT_MESSAGES).await?;
+        
+        // Check if compaction is needed
+        if self.compaction_manager.needs_compaction(&history) {
+            info!("Conversation history large ({} messages), compacting...", history.len());
+            match self.compaction_manager.compact(&history).await {
+                Ok(compacted) => {
+                    info!("Compacted to {} messages", compacted.len());
+                    messages.extend(compacted);
+                }
+                Err(e) => {
+                    warn!("Failed to compact conversation: {}, using last 10 messages", e);
+                    // Fallback: just use last 10 messages
+                    let recent = history.iter().rev().take(10).rev().cloned().collect::<Vec<_>>();
+                    messages.extend(recent);
+                }
+            }
+        } else {
+            messages.extend(history);
+        }
         
         Ok(messages)
+    }
+    
+    /// Compact conversation when we hit token limits and retry
+    async fn compact_conversation_and_retry(&mut self, tool_definitions: Option<&[super::llm::ToolDefinition]>) -> Result<super::llm::LlmResponse> {
+        warn!("Token limit hit! Emergency compaction in progress...");
+        
+        // Get current history
+        let history = self.memory.get_messages(100).await?;
+        
+        // Aggressive compaction - keep only last 5 messages
+        let split_point = history.len().saturating_sub(5);
+        let old_messages = &history[..split_point];
+        let recent_messages = &history[split_point..];
+        
+        // Generate emergency summary
+        let summary = if old_messages.len() >= 2 {
+            self.compaction_manager.compact(old_messages).await
+                .map(|c| c.first().map(|m| m.content.clone()).unwrap_or_default())
+                .unwrap_or_else(|_| "Previous conversation truncated due to length.".to_string())
+        } else {
+            "Conversation started.".to_string()
+        };
+        
+        // Build compacted message list
+        let mut compacted_messages = vec![
+            ChatMessage::system(format!("{}
+
+PREVIOUS CONTEXT (summarized): {}", 
+                self.system_prompt, 
+                summary
+            ))
+        ];
+        compacted_messages.extend_from_slice(recent_messages);
+        
+        info!("Emergency compaction complete: {} -> {} messages", history.len(), compacted_messages.len());
+        
+        // Retry with compacted messages
+        match self.llm.chat(&compacted_messages, tool_definitions).await {
+            Ok(response) => Ok(response),
+            Err(e) => {
+                // If still failing, try with just system + last 2 messages
+                warn!("Still failing after compaction, trying minimal context...");
+                let minimal = vec![
+                    ChatMessage::system(&self.system_prompt),
+                    ChatMessage::user("Please continue helping based on context so far."),
+                ];
+                self.llm.chat(&minimal, tool_definitions).await
+            }
+        }
     }
 
     /// Execute a single tool call
@@ -159,10 +265,39 @@ impl ReActAgent {
     }
 }
 
-/// Build the system prompt with tool descriptions
+/// Build the system prompt with tool descriptions and agent identity
 fn build_system_prompt(tools: &ToolRegistry) -> String {
-    let mut prompt = String::from(
-        "You are an autonomous AI assistant with access to tools. You should be proactive, intelligent, \
+    // Read agent identity from environment or use default
+    let agent_name = std::env::var("HORCRUX_AGENT_NAME").unwrap_or_else(|_| "Voldemort".to_string());
+    
+    // Try to read soul.md for backstory
+    let soul_content = std::fs::read_to_string("soul.md")
+        .unwrap_or_else(|_| "I am an AI agent with knowledge memory capabilities.".to_string());
+    
+    // Try to read memory.md for user preferences
+    let memory_content = std::fs::read_to_string("memory.md")
+        .unwrap_or_else(|_| "".to_string());
+    
+    let mut prompt = format!(
+        "You are {} (an AI agent with knowledge memory). Your user can rename you to anything they want.\n\n",
+        agent_name
+    );
+    
+    // Add identity from soul.md (extract key sections)
+    prompt.push_str("## Your Identity & Backstory\n");
+    prompt.push_str(&extract_soul_summary(&soul_content));
+    prompt.push_str("\n\n");
+    
+    // Add user preferences if available
+    if !memory_content.is_empty() {
+        prompt.push_str("## User Preferences to Remember\n");
+        prompt.push_str(&extract_memory_summary(&memory_content));
+        prompt.push_str("\n\n");
+    }
+    
+    prompt.push_str(
+        "## Core Behavior\n\
+        You are an autonomous AI assistant with access to tools. You should be proactive, intelligent, \
         and figure out how to complete tasks with minimal user guidance.\n\n"
     );
 
@@ -228,4 +363,70 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
     prompt.push_str("\nRemember: You are autonomous. Take initiative. Get things done.");
 
     prompt
+}
+
+
+/// Extract key identity info from soul.md
+fn extract_soul_summary(soul_content: &str) -> String {
+    let mut summary = String::new();
+    
+    // Extract key sections
+    for line in soul_content.lines() {
+        let trimmed = line.trim();
+        // Skip markdown headers and empty lines
+        if trimmed.starts_with("#") || trimmed.is_empty() {
+            continue;
+        }
+        // Get important lines
+        if trimmed.starts_with("**Name**") 
+            || trimmed.starts_with("**Type**")
+            || trimmed.starts_with("## Identity")
+            || trimmed.starts_with("## Core Values")
+            || trimmed.starts_with("## Personality") {
+            summary.push_str(trimmed);
+            summary.push('\n');
+        }
+        // Get bullet points under Core Values and Personality
+        else if trimmed.starts_with("- ") && summary.contains("Core Values") {
+            summary.push_str(trimmed);
+            summary.push('\n');
+        }
+    }
+    
+    if summary.is_empty() {
+        summary.push_str("- I am an AI agent with knowledge memory\n");
+        summary.push_str("- I value helpfulness, privacy, and efficiency\n");
+        summary.push_str("- I am proactive and autonomous\n");
+    }
+    
+    summary
+}
+
+/// Extract user preferences from memory.md
+fn extract_memory_summary(memory_content: &str) -> String {
+    let mut summary = String::new();
+    let mut in_user_prefs = false;
+    
+    for line in memory_content.lines() {
+        let trimmed = line.trim();
+        
+        // Start of user preferences section
+        if trimmed.starts_with("## User Preferences") {
+            in_user_prefs = true;
+            continue;
+        }
+        // End of section (next header)
+        if in_user_prefs && trimmed.starts_with("##") {
+            break;
+        }
+        // Collect preference lines
+        if in_user_prefs && (trimmed.starts_with("- ") || trimmed.contains(":")) {
+            if !trimmed.ends_with(":") { // Skip empty template lines
+                summary.push_str(trimmed);
+                summary.push('\n');
+            }
+        }
+    }
+    
+    summary
 }
