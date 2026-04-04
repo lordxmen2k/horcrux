@@ -74,12 +74,106 @@ pub const LOCAL_PROVIDERS: &[ProviderConfig] = &[
 ];
 
 /// CLOUD PROVIDERS - All major providers supported
+/// Available models for each provider
+#[derive(Debug, Clone)]
+pub struct ModelOption {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub context: &'static str,
+}
+
+/// Provider with available models
+#[derive(Debug, Clone)]
+pub struct ProviderWithModels {
+    pub config: ProviderConfig,
+    pub models: &'static [ModelOption],
+}
+
+// OpenAI Models
+pub const OPENAI_MODELS: &[ModelOption] = &[
+    ModelOption { id: "gpt-4o", name: "GPT-4o", description: "Most capable multimodal model", context: "128K" },
+    ModelOption { id: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and affordable", context: "128K" },
+    ModelOption { id: "gpt-4-turbo", name: "GPT-4 Turbo", description: "High capability, lower price", context: "128K" },
+    ModelOption { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", description: "Fast and cost-effective", context: "16K" },
+];
+
+// Anthropic Models
+pub const ANTHROPIC_MODELS: &[ModelOption] = &[
+    ModelOption { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "⭐ Best balance of intelligence and speed", context: "200K" },
+    ModelOption { id: "claude-3-opus-20240229", name: "Claude 3 Opus", description: "Most powerful for complex tasks", context: "200K" },
+    ModelOption { id: "claude-3-haiku-20240307", name: "Claude 3 Haiku", description: "Fastest responses", context: "200K" },
+];
+
+// Kimi Models
+pub const KIMI_MODELS: &[ModelOption] = &[
+    ModelOption { id: "moonshot-v1-8k", name: "Moonshot v1 8K", description: "Fast responses, basic tasks", context: "8K" },
+    ModelOption { id: "moonshot-v1-32k", name: "Moonshot v1 32K", description: "⭐ RECOMMENDED - Good balance", context: "32K" },
+    ModelOption { id: "moonshot-v1-128k", name: "Moonshot v1 128K", description: "Long context, complex documents", context: "128K" },
+];
+
+// Groq Models
+pub const GROQ_MODELS: &[ModelOption] = &[
+    ModelOption { id: "llama-3.1-70b-versatile", name: "Llama 3.1 70B", description: "⭐ Powerful, fast inference", context: "128K" },
+    ModelOption { id: "llama-3.1-8b-instant", name: "Llama 3.1 8B", description: "Very fast, efficient", context: "128K" },
+    ModelOption { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B", description: "Good reasoning", context: "32K" },
+    ModelOption { id: "gemma2-9b-it", name: "Gemma 2 9B", description: "Lightweight, fast", context: "8K" },
+];
+
+// DeepSeek Models
+pub const DEEPSEEK_MODELS: &[ModelOption] = &[
+    ModelOption { id: "deepseek-chat", name: "DeepSeek Chat", description: "⭐ General purpose, excellent reasoning", context: "64K" },
+    ModelOption { id: "deepseek-coder", name: "DeepSeek Coder", description: "Optimized for coding tasks", context: "64K" },
+];
+
+// OpenRouter Models (subset of popular ones)
+pub const OPENROUTER_MODELS: &[ModelOption] = &[
+    ModelOption { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", description: "⭐ Best overall via OpenRouter", context: "200K" },
+    ModelOption { id: "openai/gpt-4o", name: "GPT-4o", description: "OpenAI's best", context: "128K" },
+    ModelOption { id: "meta-llama/llama-3.1-70b-instruct", name: "Llama 3.1 70B", description: "Open source champion", context: "128K" },
+    ModelOption { id: "google/gemini-1.5-pro", name: "Gemini 1.5 Pro", description: "Massive context", context: "1M" },
+];
+
+// Together AI Models
+pub const TOGETHER_MODELS: &[ModelOption] = &[
+    ModelOption { id: "meta-llama/Llama-3.1-70B-Instruct-Turbo", name: "Llama 3.1 70B", description: "⭐ Fast and capable", context: "128K" },
+    ModelOption { id: "meta-llama/Llama-3.1-8B-Instruct-Turbo", name: "Llama 3.1 8B", description: "Efficient", context: "128K" },
+    ModelOption { id: "mistralai/Mixtral-8x22B-Instruct-v0.1", name: "Mixtral 8x22B", description: "Powerful MoE", context: "64K" },
+];
+
+// Fireworks Models
+pub const FIREWORKS_MODELS: &[ModelOption] = &[
+    ModelOption { id: "accounts/fireworks/models/llama-v3p1-70b-instruct", name: "Llama 3.1 70B", description: "Fast inference", context: "128K" },
+    ModelOption { id: "accounts/fireworks/models/llama-v3p1-8b-instruct", name: "Llama 3.1 8B", description: "Efficient", context: "128K" },
+    ModelOption { id: "accounts/fireworks/models/mixtral-8x22b-instruct", name: "Mixtral 8x22B", description: "Strong reasoning", context: "64K" },
+];
+
+// Cohere Models
+pub const COHERE_MODELS: &[ModelOption] = &[
+    ModelOption { id: "command-r-plus", name: "Command R+", description: "⭐ Best for RAG and tool use", context: "128K" },
+    ModelOption { id: "command-r", name: "Command R", description: "Good balance", context: "128K" },
+    ModelOption { id: "command", name: "Command", description: "General purpose", context: "4K" },
+];
+
+// AI21 Models
+pub const AI21_MODELS: &[ModelOption] = &[
+    ModelOption { id: "jamba-1.5-large", name: "Jamba 1.5 Large", description: "⭐ Long context specialist", context: "256K" },
+    ModelOption { id: "jamba-1.5-mini", name: "Jamba 1.5 Mini", description: "Efficient", context: "256K" },
+];
+
+// Azure Models
+pub const AZURE_MODELS: &[ModelOption] = &[
+    ModelOption { id: "gpt-4", name: "GPT-4", description: "High capability", context: "8K" },
+    ModelOption { id: "gpt-4-32k", name: "GPT-4 32K", description: "Extended context", context: "32K" },
+    ModelOption { id: "gpt-35-turbo", name: "GPT-3.5 Turbo", description: "Cost-effective", context: "4K" },
+];
+
 pub const CLOUD_PROVIDERS: &[ProviderConfig] = &[
     // TIER 1: Recommended / Best Experience
     ProviderConfig {
         name: "Kimi (Moonshot) - RECOMMENDED",
         base_url: "https://api.moonshot.ai/v1",
-        default_model: "moonshot-v1-8k",
+        default_model: "moonshot-v1-32k",
         needs_api_key: true,
         description: "Best tool use for the price. $0.50/1M tokens. Chinese & English support",
         free_tier: true,
@@ -97,7 +191,7 @@ pub const CLOUD_PROVIDERS: &[ProviderConfig] = &[
     ProviderConfig {
         name: "OpenAI (GPT-4o) - Popular",
         base_url: "https://api.openai.com/v1",
-        default_model: "gpt-4o-mini",
+        default_model: "gpt-4o",
         needs_api_key: true,
         description: "Reliable, fast, excellent tool support. $0.15/1M tokens",
         free_tier: false,
@@ -235,7 +329,6 @@ impl SetupWizard {
     }
     
     async fn setup_local_model(&self) -> Result<(String, String, String)> {
-        // This wraps the existing setup_local logic but returns values
         println!("\n📦 Local Model Setup (Ollama)\n");
         
         // Check if Ollama is installed
@@ -244,96 +337,80 @@ impl SetupWizard {
         let ollama_installed = self.check_ollama_installed();
         
         if !ollama_installed {
-            println!("❌ Ollama is not installed on your system.\n");
-            println!("📋 To use local models, you must install Ollama yourself:\n");
-            println!("   ┌─────────────────────────────────────────────────────────┐");
-            println!("   │  macOS or Linux:                                        │");
-            println!("   │  curl -fsSL https://ollama.com/install.sh | sh          │");
-            println!("   │                                                         │");
-            println!("   │  Windows:                                               │");
-            println!("   │  Download from https://ollama.com/download/windows      │");
-            println!("   │  Or use: winget install Ollama.Ollama                   │");
-            println!("   └─────────────────────────────────────────────────────────┘\n");
-            println!("📋 After installing Ollama:");
-            println!("   1. Ollama runs as a background service");
-            println!("   2. Verify it's working: ollama --version");
-            println!("   3. Then return here to continue setup\n");
-            
-            let continue_setup = self.prompt_yes_no("Have you installed Ollama?")?;
-            
-            if !continue_setup {
-                println!("\n⏹️  Setup paused.");
-                println!("   Install Ollama using the instructions above,");
-                println!("   then run: horcrux setup\n");
-                return Err(anyhow::anyhow!("Ollama not installed"));
-            }
-            
-            // Verify installation
-            if !self.check_ollama_installed() {
-                println!("\n❌ Ollama is still not detected.");
-                println!("   Make sure Ollama is running (check system tray on Windows)");
-                println!("   and try again.\n");
-                return Err(anyhow::anyhow!("Ollama not detected"));
-            }
+            println!("❌ Ollama is not installed.\n");
+            println!("📋 Install from: https://ollama.com/download\n");
+            return Err(anyhow::anyhow!("Ollama not installed"));
         }
         
         println!("✅ Ollama is installed!\n");
         
-        // Select model
-        println!("Step 2: Select a model\n");
-        println!("These models will be downloaded through Ollama:\n");
+        // Fetch available models from Ollama
+        println!("📋 Checking available models...\n");
+        let available_models = self.get_local_ollama_models().await;
         
-        for (i, provider) in LOCAL_PROVIDERS.iter().enumerate() {
-            let recommended = if i == 0 { " ⭐ RECOMMENDED" } else { "" };
-            println!("{}) {}{}", i + 1, provider.name, recommended);
-            println!("   {}\n", provider.description);
+        let model = {
+            // Show dropdown of available models
+            println!("Popular Ollama models:\n");
+            
+            // Show recommended models with download status
+            let recommended = vec![
+                ("qwen2.5:7b", "⭐ RECOMMENDED - Best balance of speed and capability"),
+                ("llama3.1:8b", "Very popular, good tool use"),
+                ("mistral:7b", "Fast and capable"),
+                ("qwen2.5:14b", "More powerful, needs 16GB RAM"),
+                ("deepseek-r1:8b", "Excellent reasoning"),
+                ("llama3.2:3b", "Lightweight, 4GB RAM"),
+            ];
+            
+            // Build display list
+            let mut display_list: Vec<(String, String)> = Vec::new();
+            for (name, desc) in &recommended {
+                let is_downloaded = self.check_model_exists(name);
+                let status = if is_downloaded { "✅" } else { "📥" };
+                let display = format!("{} {} - {}", status, name, desc);
+                display_list.push((name.to_string(), display));
+            }
+            
+            // Show the list
+            for (i, (name, display)) in display_list.iter().enumerate() {
+                println!("{}) {}", i + 1, display);
+            }
+            println!("{}) 📝 Custom model (type your own)", display_list.len() + 1);
+            
+            let choice = self.prompt_number(
+                "Select model",
+                1,
+                display_list.len() + 1
+            )?;
+            
+            if choice == display_list.len() + 1 {
+                // Custom model
+                print!("Enter model name (e.g., codellama:7b): ");
+                std::io::stdout().flush()?;
+                let mut custom_model = String::new();
+                std::io::stdin().read_line(&mut custom_model)?;
+                custom_model.trim().to_string()
+            } else {
+                display_list[choice - 1].0.clone()
+            }
+        };
+        
+        // Check if model needs to be downloaded
+        if !self.check_model_exists(&model) {
+            println!("\n📥 Model '{}' not found locally.", model);
+            println!("   Run: ollama pull {}", model);
+            println!("   Then restart horcrux.\n");
         }
         
-        let model_choice = self.prompt_number(
-            "Enter model number",
-            1,
-            LOCAL_PROVIDERS.len()
-        )?;
-        
-        let selected = &LOCAL_PROVIDERS[model_choice - 1];
-        
-        println!("\n📋 Next Steps:\n");
-        println!("   You selected: {}", selected.default_model);
-        println!("\n   To download this model, run this command in your terminal:");
-        println!("   ┌─────────────────────────────────────────────────────────┐");
-        println!("   │  ollama pull {:43}│", selected.default_model);
-        println!("   └─────────────────────────────────────────────────────────┘\n");
-        
-        let has_model = self.prompt_yes_no("Have you downloaded the model?")?;
-        
-        if !has_model {
-            println!("\n⏹️  Setup paused.");
-            println!("   Run: ollama pull {}", selected.default_model);
-            println!("   Then run: horcrux setup\n");
-            return Err(anyhow::anyhow!("Model not downloaded"));
-        }
-        
-        // Verify model exists
-        if !self.check_model_exists(selected.default_model) {
-            println!("\n⚠️  Model '{}' not found.", selected.default_model);
-            println!("   Make sure you ran: ollama pull {}", selected.default_model);
-            println!("   Check installed models: ollama list\n");
-            return Err(anyhow::anyhow!("Model not found"));
-        }
-
-        println!("\n✅ Local model configured!");
-        println!("   Model: {}\n", selected.default_model);
-        
-        Ok((selected.base_url.to_string(), selected.default_model.to_string(), "ollama".to_string()))
+        Ok(("http://localhost:11434/v1".to_string(), model, "ollama".to_string()))
     }
     
     async fn setup_cloud_model(&self) -> Result<(String, String, String)> {
-        // This wraps the existing setup_cloud logic but returns values
         println!("\n☁️  Cloud API Setup\n");
         
-        println!("Select a cloud provider:\n");
+        // Step 1: Select provider
+        println!("Step 1: Select a cloud provider\n");
         
-        // Show providers by tier
         println!("⭐ RECOMMENDED:");
         let recommended: Vec<_> = CLOUD_PROVIDERS.iter()
             .filter(|p| p.name.contains("RECOMMENDED") || p.name.contains("Premium"))
@@ -357,35 +434,98 @@ impl SetupWizard {
             CLOUD_PROVIDERS.len()
         )?;
         
-        let selected = &CLOUD_PROVIDERS[provider_choice - 1];
+        let selected_provider = &CLOUD_PROVIDERS[provider_choice - 1];
+        println!("\n✅ Provider: {}\n", selected_provider.name);
         
-        println!("\n📋 Provider: {}", selected.name);
+        // Step 2: Select model (NEW - right after provider!)
+        println!("Step 2: Select a model\n");
+        let models = self.get_models_for_provider(selected_provider.name);
         
-        // Get API key if needed
-        let api_key = if selected.needs_api_key {
-            println!("\nThis provider requires an API key.");
-            self.show_provider_instructions(selected.name);
+        let model_id = if !models.is_empty() {
+            println!("Available models:\n");
             
+            for (i, model) in models.iter().enumerate() {
+                let star = if model.description.contains("⭐") { "⭐ " } else { "" };
+                println!("{}) {}{} ({} context)", 
+                    i + 1, 
+                    star,
+                    model.name, 
+                    model.context
+                );
+                println!("   {}\n", model.description);
+            }
+            println!("{}) 📝 Custom model (type your own)", models.len() + 1);
+            
+            let model_choice = self.prompt_number(
+                "Select model",
+                1,
+                models.len() + 1
+            )?;
+            
+            if model_choice == models.len() + 1 {
+                // Custom model
+                print!("Enter model ID (e.g., gpt-4-turbo-preview): ");
+                std::io::stdout().flush()?;
+                let mut custom_model = String::new();
+                std::io::stdin().read_line(&mut custom_model)?;
+                custom_model.trim().to_string()
+            } else {
+                models[model_choice - 1].id.to_string()
+            }
+        } else {
+            // No predefined models - ask manually
+            print!("Enter model ID (e.g., gpt-4): ");
+            std::io::stdout().flush()?;
+            let mut model = String::new();
+            std::io::stdin().read_line(&mut model)?;
+            model.trim().to_string()
+        };
+        
+        println!("\n✅ Selected model: {}\n", model_id);
+        
+        // Step 3: Get API key
+        println!("Step 3: API Key\n");
+        let api_key = if selected_provider.needs_api_key {
+            self.show_provider_instructions(selected_provider.name);
             self.prompt_secret("Enter your API key")?
         } else {
             String::new()
         };
 
-        // Test the configuration
+        // Test configuration
         println!("\n🧪 Testing configuration...");
-        let test_passed = self.test_cloud_config(selected, &api_key).await;
+        let test_passed = self.test_cloud_config_with_model(selected_provider, &model_id, &api_key).await;
         
         if test_passed {
             println!("✅ Configuration works!");
         } else {
-            println!("⚠️  Could not verify configuration (this might be OK)");
+            println!("⚠️  Could not verify (this might be OK if the API is working)");
         }
 
-        println!("\n✅ Cloud provider configured!");
-        println!("Provider: {}", selected.name);
-        println!("Model: {}\n", selected.default_model);
+        println!("\n✅ Cloud configuration complete!");
+        println!("   Provider: {}", selected_provider.name);
+        println!("   Model: {}\n", model_id);
         
-        Ok((selected.base_url.to_string(), selected.default_model.to_string(), api_key))
+        let base_url = selected_provider.base_url.to_string();
+        Ok((base_url, model_id, api_key))
+    }
+    
+    /// Get available models for a provider
+    fn get_models_for_provider(&self, provider_name: &str) -> &'static [ModelOption] {
+        match provider_name {
+            "OpenAI (GPT-4o) - Popular" => OPENAI_MODELS,
+            "Anthropic (Claude) - Premium" => ANTHROPIC_MODELS,
+            "Kimi (Moonshot) - RECOMMENDED" => KIMI_MODELS,
+            "Groq - Ultra Fast" => GROQ_MODELS,
+            "DeepSeek - China Optimized" => DEEPSEEK_MODELS,
+            "OpenRouter - Universal" => OPENROUTER_MODELS,
+            "Together AI - Open Source" => TOGETHER_MODELS,
+            "Fireworks AI - Fast" => FIREWORKS_MODELS,
+            "Cohere - Command R+" => COHERE_MODELS,
+            "AI21 Labs - Jurassic" => AI21_MODELS,
+            "Azure OpenAI - Enterprise" => AZURE_MODELS,
+            _ => &[],
+        }
     }
     
     fn show_provider_instructions(&self, name: &str) {
@@ -450,6 +590,27 @@ impl SetupWizard {
             .map(|output| output.status.success())
             .unwrap_or(false)
     }
+    
+    /// Get list of locally installed Ollama models
+    async fn get_local_ollama_models(&self) -> Vec<String> {
+        match tokio::process::Command::new("ollama")
+            .arg("list")
+            .output()
+            .await
+        {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                stdout.lines()
+                    .skip(1) // Skip header line
+                    .filter_map(|line| {
+                        // Parse lines like: "qwen2.5:7b    845db89...    4.4 GB"
+                        line.split_whitespace().next().map(|s| s.to_string())
+                    })
+                    .collect()
+            }
+            Err(_) => Vec::new(),
+        }
+    }
 
     async fn pull_ollama_model(&self, model: &str) -> bool {
         println!("Running: ollama pull {}\n", model);
@@ -479,6 +640,10 @@ impl SetupWizard {
     }
 
     async fn test_cloud_config(&self, provider: &ProviderConfig, api_key: &str) -> bool {
+        self.test_cloud_config_with_model(provider, provider.default_model, api_key).await
+    }
+    
+    async fn test_cloud_config_with_model(&self, provider: &ProviderConfig, model: &str, api_key: &str) -> bool {
         // Simple connectivity test
         let client = reqwest::Client::new();
         
@@ -486,6 +651,7 @@ impl SetupWizard {
             return true; // Skip for local
         }
         
+        // Try to list models or do a simple completion test
         match client
             .get(format!("{}/models", provider.base_url.trim_end_matches("/v1")))
             .bearer_auth(api_key)
@@ -493,7 +659,25 @@ impl SetupWizard {
             .await
         {
             Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
+            Err(_) => {
+                // Fallback: try a simple chat completion
+                let request = serde_json::json!({
+                    "model": model,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "max_tokens": 5
+                });
+                
+                match client
+                    .post(format!("{}/chat/completions", provider.base_url.trim_end_matches("/v1")))
+                    .bearer_auth(api_key)
+                    .json(&request)
+                    .send()
+                    .await
+                {
+                    Ok(resp) => resp.status().is_success(),
+                    Err(_) => false,
+                }
+            }
         }
     }
 
