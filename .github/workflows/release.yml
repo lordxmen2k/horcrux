@@ -11,6 +11,7 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false  # Don't cancel other builds if one fails
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
@@ -46,10 +47,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+          sudo apt-get install -y pkg-config libssl-dev musl-tools
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install openssl@3
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
+        env:
+          OPENSSL_DIR: ${{ matrix.os == 'macos-latest' && '/usr/local/opt/openssl@3' || '' }}
 
       - name: Package binary
         shell: bash

@@ -47,7 +47,8 @@ notify = "6"
 unicode-segmentation = "1"
 
 # Embedding via HTTP (OpenAI-compatible endpoint, Ollama, etc.)
-reqwest = { version = "0.12", features = ["json", "blocking", "stream"] }
+# Using rustls instead of native-tls to avoid OpenSSL linking issues
+reqwest = { version = "0.12", features = ["json", "blocking", "stream", "rustls-tls"], default-features = false }
 
 # Hashing (docids)
 sha2 = "0.10"
