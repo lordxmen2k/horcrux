@@ -1,0 +1,95 @@
+[package]
+name = "horcrux"
+version = "0.1.0"
+edition = "2021"
+description = "AI Agent with knowledge memory — distributed intelligence for your tasks"
+license = "MIT"
+repository = "https://github.com/yourusername/horcrux"
+keywords = ["llm", "memory", "semantic-search", "embeddings", "rag"]
+categories = ["command-line-utilities", "text-processing"]
+
+[dependencies]
+# CLI parsing
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite (bundled so no system dep needed)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Vector similarity (no BLAS dep, pure Rust)
+ndarray = "0.15"
+
+# File watching / markdown walking
+walkdir = "2"
+glob = "0.3"
+notify = "6"
+
+# Chunking / text processing
+unicode-segmentation = "1"
+
+# Embedding via HTTP (OpenAI-compatible endpoint, Ollama, etc.)
+reqwest = { version = "0.12", features = ["json", "blocking", "stream"] }
+
+# Hashing (docids)
+sha2 = "0.10"
+hex = "0.4"
+
+# Pattern matching for file globbing
+regex = "1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Async traits (for Tool trait)
+async-trait = "0.1"
+
+# Random numbers (for session IDs)
+rand = "0.8"
+
+# Telegram bot API
+teloxide = { version = "0.12", features = ["macros"] }
+
+# Load .env file automatically
+dotenvy = "0.15"
+
+# XDG/cache directory handling
+dirs = "5"
+
+# TUI - interactive terminal interface
+ratatui = "0.29"
+crossterm = "0.28"
+
+# HTTP Server
+axum = { version = "0.7", features = ["tokio"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+futures = "0.3"
+async-stream = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+integration-tests = []
+
+[lib]
+name = "horcrux"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
