@@ -15,6 +15,7 @@ pub mod compaction;
 pub mod config_cli;
 pub mod llm;
 pub mod memory;
+pub mod personality;
 pub mod react;
 
 pub use compaction::{CompactionConfig, CompactionManager};

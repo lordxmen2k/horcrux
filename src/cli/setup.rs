@@ -197,17 +197,20 @@ impl SetupWizard {
         // Step 1: AI Model Configuration
         let model_config = self.setup_model().await?;
         
-        // Step 2: Messaging Integrations (optional)
+        // Step 2: Choose Personality (optional, defaults to Voldemort)
+        let personality_config = self.setup_personality().await?;
+        
+        // Step 3: Messaging Integrations (optional)
         let integrations_config = self.setup_integrations().await?;
         
-        // Step 3: Server & API (optional)
+        // Step 4: Server & API (optional)
         let server_config = self.setup_server().await?;
         
-        // Step 4: Advanced Features (optional)
+        // Step 5: Advanced Features (optional)
         let advanced_config = self.setup_advanced().await?;
         
         // Save all configurations
-        self.save_complete_config(model_config, integrations_config, server_config, advanced_config).await?;
+        self.save_complete_config(model_config, personality_config, integrations_config, server_config, advanced_config).await?;
         
         Ok(())
     }
@@ -539,8 +542,37 @@ impl SetupWizard {
     
     // New setup methods for comprehensive configuration
     
+    async fn setup_personality(&self) -> Result<PersonalityConfig> {
+        use horcrux::agent::personality::PERSONALITIES;
+        
+        println!("\n🎭 STEP 2: Choose Your Agent's Personality\n");
+        println!("Select a character that defines how your agent communicates:\n");
+        
+        for (i, p) in PERSONALITIES.iter().enumerate() {
+            println!("{}) {} - {}", i + 1, p.name, p.description);
+        }
+        println!();
+        
+        let choice = self.prompt_number(
+            "Enter personality number (or press Enter for Voldemort)",
+            1,
+            PERSONALITIES.len()
+        )?;
+        
+        let selected = &PERSONALITIES[choice - 1];
+        
+        println!("\n✅ Personality selected: {}", selected.name);
+        println!("   Tone: {}", selected.tone);
+        println!();
+        
+        Ok(PersonalityConfig {
+            id: selected.id.to_string(),
+            name: selected.name.to_string(),
+        })
+    }
+    
     async fn setup_integrations(&self) -> Result<IntegrationConfig> {
-        println!("\n💬 STEP 2: Messaging Platform Integrations (Optional)\n");
+        println!("\n💬 STEP 3: Messaging Platform Integrations (Optional)\n");
         println!("Connect your agent to messaging platforms you use.");
         println!("You can chat with your agent from any of these apps!\n");
         
@@ -642,7 +674,7 @@ impl SetupWizard {
     }
     
     async fn setup_server(&self) -> Result<ServerConfig> {
-        println!("\n🌐 STEP 3: API Server & Web Interface (Optional)\n");
+        println!("\n🌐 STEP 4: API Server & Web Interface (Optional)\n");
         
         let mut config = ServerConfig::default();
         
@@ -691,7 +723,7 @@ impl SetupWizard {
     }
     
     async fn setup_advanced(&self) -> Result<AdvancedConfig> {
-        println!("\n⚙️  STEP 4: Advanced Features (Optional)\n");
+        println!("\n⚙️  STEP 5: Advanced Features (Optional)\n");
         
         let mut config = AdvancedConfig::default();
         
@@ -758,6 +790,7 @@ impl SetupWizard {
     async fn save_complete_config(
         &self,
         model: ModelConfig,
+        personality: PersonalityConfig,
         integrations: IntegrationConfig,
         server: ServerConfig,
         advanced: AdvancedConfig,
@@ -772,6 +805,12 @@ impl SetupWizard {
             format!("HORCRUX_LLM_API_KEY={}", model.api_key),
             "".to_string(),
         ];
+        
+        // Add personality
+        config_lines.push("# === Agent Personality ===".to_string());
+        config_lines.push(format!("HORCRUX_AGENT_NAME={}", personality.name));
+        config_lines.push(format!("HORCRUX_PERSONALITY={}", personality.id));
+        config_lines.push("".to_string());
         
         // Add integrations
         if integrations.has_any() {
@@ -853,6 +892,20 @@ struct ModelConfig {
     base_url: String,
     model: String,
     api_key: String,
+}
+
+struct PersonalityConfig {
+    id: String,
+    name: String,
+}
+
+impl Default for PersonalityConfig {
+    fn default() -> Self {
+        Self {
+            id: "voldemort".to_string(),
+            name: "Voldemort".to_string(),
+        }
+    }
 }
 
 #[derive(Default)]
