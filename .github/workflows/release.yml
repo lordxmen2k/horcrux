@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Add permissions for the release job
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.target }}
