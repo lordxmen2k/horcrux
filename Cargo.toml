@@ -87,10 +87,10 @@ dirs = "5"
 ratatui = "0.29"
 crossterm = "0.28"
 
-# HTTP Server
+# HTTP Server - using rustls
 axum = { version = "0.7", features = ["tokio"] }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "fs"] }
+tower-http = { version = "0.5", features = ["cors", "fs"], default-features = false }
 futures = "0.3"
 async-stream = "0.3"
 

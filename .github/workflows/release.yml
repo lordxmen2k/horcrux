@@ -57,7 +57,8 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
         env:
-          OPENSSL_DIR: ${{ matrix.os == 'macos-latest' && '/usr/local/opt/openssl@3' || '' }}
+          OPENSSL_LIB_DIR: /usr/lib/x86_64-linux-gnu
+          OPENSSL_INCLUDE_DIR: /usr/include/openssl
 
       - name: Package binary
         shell: bash
