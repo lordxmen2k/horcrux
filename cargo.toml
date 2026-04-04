@@ -2,11 +2,27 @@
 name = "horcrux"
 version = "0.1.0"
 edition = "2021"
-description = "AI Agent with knowledge memory — distributed intelligence for your tasks"
+authors = ["Your Name <you@example.com>"]
+description = "AI Agent with Knowledge Memory - Multi-platform bots, skills, and semantic search"
 license = "MIT"
 repository = "https://github.com/yourusername/horcrux"
-keywords = ["llm", "memory", "semantic-search", "embeddings", "rag"]
-categories = ["command-line-utilities", "text-processing"]
+homepage = "https://github.com/yourusername/horcrux"
+documentation = "https://docs.rs/horcrux"
+readme = "README.md"
+keywords = ["ai", "agent", "llm", "memory", "semantic-search", "telegram", "discord", "bot", "rag"]
+categories = ["command-line-utilities", "text-processing", "web-programming::http-server"]
+exclude = [
+    "/target/*",
+    "/*.sh",
+    "/.github/*",
+    "/docs/*",
+    "*.db",
+    "*.db-shm",
+    "*.db-wal",
+    ".env",
+    ".env.*",
+    "*.log",
+]
 
 [dependencies]
 # CLI parsing
@@ -87,6 +103,10 @@ integration-tests = []
 [lib]
 name = "horcrux"
 path = "src/lib.rs"
+
+[[bin]]
+name = "horcrux"
+path = "src/main.rs"
 
 [profile.release]
 opt-level = 3

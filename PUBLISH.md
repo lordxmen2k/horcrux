@@ -1,89 +1,119 @@
-# Publishing Guide
+# Publishing Guide for Horcrux
 
-This guide covers how to publish this crate to [crates.io](https://crates.io/).
+This guide covers how to publish Horcrux to [crates.io](https://crates.io/) as a Rust crate.
 
-## Step 1: Choose a Name
+## Overview
 
-The current name `memscape` is already taken on crates.io. Here are **available alternatives**:
+Horcrux is an AI agent framework with:
+- ReAct-based reasoning with tool use
+- Knowledge memory with semantic search
+- Multi-platform messaging bots
+- REST API and Web UI
+- 15+ built-in skills
 
-| Name | Available | Notes |
-|------|-----------|-------|
-| ✅ **memsie** | Yes | Cute, memorable, "memory" + "sie" |
-| ✅ **memzy** | Yes | Short, catchy, modern |
-| ✅ **memzee** | Yes | Fun, "memory" + "zee" |
-| ✅ **memscape** | Yes | "Memory" + "landscape", evocative |
-| ✅ **memsee** | Yes | "Memory" + "see", descriptive |
-| ✅ **memsii** | Yes | Unique spelling |
+## Step 1: Check Crate Name Availability
 
-**Recommended:** `memsie` or `memzy` - short, memorable, easy to type.
+```bash
+# Check if 'horcrux' is available on crates.io
+cargo search horcrux
+```
 
-## Step 2: Update Project Name
+If taken, consider alternatives:
+- `horcrux-agent`
+- `horcrux-ai`
+- `horcrux-mind`
 
-Once you've chosen a name (e.g., `memsie`), update:
+## Step 2: Prepare Cargo.toml
 
-### 1. Cargo.toml
+Ensure your `Cargo.toml` has all required metadata:
 
 ```toml
 [package]
-name = "memsie"  # <-- Change this
+name = "horcrux"
 version = "0.1.0"
+authors = ["Your Name <you@example.com>"]
 edition = "2021"
-description = "Fast local semantic memory for LLMs"
+description = "AI Agent with Knowledge Memory - Multi-platform bots, skills, and semantic search"
 license = "MIT"
-repository = "https://github.com/YOUR_USERNAME/memsie"
-keywords = ["llm", "memory", "semantic-search", "embeddings", "rag"]
-categories = ["command-line-utilities", "text-processing"]
-```
+repository = "https://github.com/YOUR_USERNAME/horcrux"
+homepage = "https://github.com/YOUR_USERNAME/horcrux"
+documentation = "https://docs.rs/horcrux"
+readme = "README.md"
+keywords = ["ai", "agent", "llm", "memory", "semantic-search", "telegram", "discord", "bot"]
+categories = ["command-line-utilities", "text-processing", "web-programming"]
+exclude = [
+    "/target/*",
+    "/*.sh",
+    "/.github/*",
+    "/docs/*",
+    "*.db",
+    "*.db-*",
+    ".env",
+]
 
-### 2. Binary Name (optional)
-
-If you want the CLI command to differ from the crate name:
-
-```toml
 [[bin]]
-name = "memsie"      # The command users will type
-crate-type = ["bin"]
+name = "horcrux"
+path = "src/main.rs"
+
+[dependencies]
+# ... your dependencies ...
 ```
 
-### 3. Code References
+## Step 3: Create Required Files
 
-Search and replace `memscape` with your new name in:
-- `src/main.rs` (in comments/strings if any)
-- `src/cli/mod.rs` (help text)
-- `src/cli/status.rs` (status messages)
-- `README.md`
-- `SETUP.md`
+### LICENSE File
 
-### 4. Environment Variables (Optional)
+Create `LICENSE` in project root (MIT example):
 
-Consider updating env vars for consistency:
+```
+MIT License
 
-```rust
-// Old
-CLAW_EMBED_URL → memscape_EMBED_URL → MEMSIE_EMBED_URL (optional)
+Copyright (c) 2026 [Your Name]
 
-// Current backward-compatible approach is fine
-// Just update docs to mention the new preferred name
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
-## Step 3: Prepare for Publishing
+### Ensure README.md is Ready
 
-### 1. Create a crates.io Account
+Your README should include:
+- Clear description
+- Installation instructions (`cargo install horcrux`)
+- Usage examples
+- Feature list
+- Configuration guide
+
+## Step 4: Create crates.io Account
 
 1. Go to [crates.io](https://crates.io/)
 2. Sign in with GitHub
 3. Go to Account Settings → API Tokens
-4. Create a new token: `cargo publish`
+4. Create a new token named `cargo publish`
 5. Copy the token
 
-### 2. Login with Cargo
+## Step 5: Login with Cargo
 
 ```bash
 cargo login
 # Paste your API token when prompted
 ```
 
-### 3. Verify Package
+## Step 6: Verify Package
 
 ```bash
 # Dry run - checks everything without publishing
@@ -97,60 +127,39 @@ cargo test
 
 # Build in release mode
 cargo build --release
+
+# Check what's being included in the package
+cargo package --list
 ```
 
-### 4. Add Required Metadata
+### Common Issues
 
-Ensure `Cargo.toml` has these fields:
-
-```toml
-[package]
-name = "memsie"
-version = "0.1.0"
-authors = ["Your Name <you@example.com>"]
-edition = "2021"
-description = "Fast local semantic memory for LLMs"
-license = "MIT"  # or "Apache-2.0", etc.
-repository = "https://github.com/YOUR_USERNAME/memsie"
-homepage = "https://github.com/YOUR_USERNAME/memsie"
-documentation = "https://docs.rs/memsie"
-readme = "README.md"
-keywords = ["llm", "memory", "semantic-search", "embeddings", "rag"]
-categories = ["command-line-utilities", "text-processing"]
-exclude = ["/*.sh", "/.github/*", "/docs/*"]
+**Binary files too large:**
+```bash
+# Make sure to exclude in Cargo.toml:
+exclude = ["target/*", "*.db", ".env"]
 ```
 
-### 5. Add LICENSE File
-
-Create a `LICENSE` file in the project root:
-
-**MIT License (example):**
-```
-MIT License
-
-Copyright (c) 2026 [Your Name]
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-[... rest of MIT license ...]
+**Missing documentation:**
+```bash
+# Add doc comments to public APIs
+# Test docs locally
+cargo doc --no-deps
+cargo test --doc
 ```
 
-## Step 4: Publish
+## Step 7: Publish
 
 ### First Release
 
 ```bash
-# 1. Commit all changes
+# 1. Ensure everything is committed
+git status
 git add .
-git commit -m "Prepare for v0.1.0 release"
+git commit -m "Prepare for v0.1.0 crates.io release"
 
-# 2. Tag the release
-git tag -a v0.1.0 -m "First release"
+# 2. Create git tag
+git tag -a v0.1.0 -m "First crates.io release"
 git push origin v0.1.0
 
 # 3. Publish to crates.io
@@ -179,33 +188,63 @@ cargo publish
    cargo publish
    ```
 
-## Step 5: Verify
+## Step 8: Verify Publication
 
-1. Check crates.io: `https://crates.io/crates/memsie`
-2. Check docs.rs: `https://docs.rs/memsie`
+1. Check crates.io: `https://crates.io/crates/horcrux`
+2. Check docs.rs: `https://docs.rs/horcrux`
 3. Test installation:
    ```bash
-   cargo install memsie
-   memsie --version
+   cargo install horcrux
+   horcrux --version
    ```
 
 ## Post-Publishing Checklist
 
-- [ ] Update README with installation instructions
 - [ ] Add badges to README:
   ```markdown
-  [![Crates.io](https://img.shields.io/crates/v/memsie)](https://crates.io/crates/memsie)
-  [![Docs.rs](https://docs.rs/memsie/badge.svg)](https://docs.rs/memsie)
+  [![Crates.io](https://img.shields.io/crates/v/horcrux)](https://crates.io/crates/horcrux)
+  [![Docs.rs](https://docs.rs/horcrux/badge.svg)](https://docs.rs/horcrux)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   ```
+- [ ] Update README with `cargo install` instructions
+- [ ] Create GitHub Release with binaries (see SETUP.md)
 - [ ] Announce on social media / forums
 - [ ] Submit to [awesome-rust](https://github.com/rust-unofficial/awesome-rust)
-- [ ] Consider publishing GitHub Releases with binaries
+- [ ] Add to [lib.rs](https://lib.rs/)
+
+## Alternative Distribution Methods
+
+### GitHub Releases (Recommended for End Users)
+
+Most users prefer pre-built binaries. Use GitHub Actions to build releases:
+
+```bash
+# See .github/workflows/release.yml
+git tag -a v0.1.0 -m "Release v0.1.0"
+git push origin v0.1.0
+# Binaries built automatically
+```
+
+### cargo-binstall
+
+Users can install without compiling:
+```bash
+cargo install cargo-binstall
+cargo binstall horcrux
+```
+
+### Homebrew (macOS/Linux)
+
+Create a Homebrew formula for easy installation.
 
 ## Troubleshooting
 
 ### "crate with this name already exists"
 
-The name is taken. Try another from the list above.
+The name is taken. Options:
+1. Choose a different name (e.g., `horcrux-agent`)
+2. Contact the owner of the existing crate
+3. Use a different registry
 
 ### "failed to verify package tarball"
 
@@ -215,7 +254,7 @@ cargo package --list
 
 # Add exclusions to Cargo.toml
 [package]
-exclude = ["target/*", "*.log", "tests/fixtures/*"]
+exclude = ["target/*", "*.log", "tests/fixtures/*", "*.db", ".env"]
 ```
 
 ### "documentation tests failed"
@@ -223,13 +262,15 @@ exclude = ["target/*", "*.log", "tests/fixtures/*"]
 ```bash
 # Test docs locally
 cargo test --doc
+
+# Fix doc examples to be complete and runnable
 ```
 
 ### "missing license"
 
-Add a `LICENSE` file to the project root.
+Add a `LICENSE` or `LICENSE-MIT` file to the project root.
 
-## yanking a Release (Emergency)
+## Yanking a Release (Emergency)
 
 If you need to remove a version:
 
@@ -242,21 +283,9 @@ To undo:
 cargo yank --undo --version 0.1.0
 ```
 
-## Alternative: Binary Releases
-
-For users who don't have Rust installed, provide pre-built binaries:
-
-1. Use [cargo-dist](https://github.com/axodotdev/cargo-dist):
-   ```bash
-   cargo install cargo-dist
-   cargo dist init
-   cargo dist generate
-   ```
-
-2. Or GitHub Actions to build releases
-
 ## Resources
 
 - [The Cargo Book - Publishing](https://doc.rust-lang.org/cargo/reference/publishing.html)
 - [crates.io policies](https://crates.io/policies)
 - [SemVer](https://semver.org/) for versioning
+- [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)

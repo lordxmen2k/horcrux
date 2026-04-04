@@ -1,6 +1,6 @@
-# Testing Guide for memscape
+# Testing Guide for Horcrux
 
-This document describes the test suite for memscape and how to run it.
+This document describes the test suite for Horcrux and how to run it.
 
 ## Test Structure
 
@@ -14,6 +14,7 @@ The test suite is organized as follows:
 | `src/embed.rs` | Text hashing, cosine similarity, embed config |
 | `src/cache.rs` | Cache operations, eviction, invalidation, thread safety |
 | `src/types.rs` | Type creation, serialization/deserialization |
+| `src/tools/` | Tool implementations and skill execution |
 
 ### Integration Tests (in `tests/`)
 
@@ -65,6 +66,7 @@ cargo test test_name
 cargo test chunk::tests
 cargo test embed::tests
 cargo test cache::tests
+cargo test tools::tests
 ```
 
 ## Test Coverage Summary
@@ -113,16 +115,26 @@ cargo test cache::tests
 - ✅ `test_chunk_creation` - Chunk with/without embeddings
 - ✅ `test_path_context_creation` - PathContext construction
 
+### Agent Tests (in `src/agent/`)
+- ✅ `test_react_loop` - ReAct reasoning loop
+- ✅ `test_tool_execution` - Tool calling and results
+- ✅ `test_skill_creation` - Dynamic skill creation
+- ✅ `test_memory_persistence` - Conversation history
+
 ### Integration Tests
 - ✅ `test_database_creation` - Database file creation
 - ✅ `test_collection_crud` - Collection create/read/update/delete
 - ✅ `test_document_crud` - Document operations
 - ✅ `test_chunk_operations` - Chunk insertion and counting
 - ✅ `test_bm25_search` - Full-text search
+- ✅ `test_vector_search` - Semantic search
+- ✅ `test_hybrid_search` - BM25 + vector combined
 - ✅ `test_search_no_results` - Empty result handling
 - ✅ `test_chunking_integration` - End-to-end chunking
 - ✅ `test_title_extraction_integration` - Title extraction
 - ✅ `test_snippet_extraction_integration` - Snippet generation
+- ✅ `test_skill_execution` - Running built-in skills
+- ✅ `test_telegram_tool` - Telegram bot tool
 
 ## Continuous Integration
 
@@ -153,6 +165,9 @@ jobs:
     
     - name: Run integration tests
       run: cargo test --features integration-tests
+    
+    - name: Build release
+      run: cargo build --release
 ```
 
 ## Adding New Tests
@@ -175,6 +190,12 @@ mod tests {
         // Assert
         assert_eq!(result, expected);
     }
+    
+    #[tokio::test]
+    async fn test_async_feature() {
+        let result = async_function().await;
+        assert!(result.is_ok());
+    }
 }
 ```
 
@@ -190,6 +211,42 @@ fn test_feature_integration() {
     let result = db.my_feature().unwrap();
     assert!(result.is_ok());
 }
+
+#[tokio::test]
+async fn test_agent_conversation() {
+    let agent = ReActAgent::new().await.unwrap();
+    let response = agent.chat("Hello").await.unwrap();
+    assert!(!response.is_empty());
+}
+```
+
+## Testing Specific Components
+
+### Testing the Agent
+
+```bash
+# Run agent in test mode
+HORCRUX_LLM_URL=http://localhost:11434/v1 \
+HORCRUX_LLM_MODEL=llama3.1:8b \
+cargo test agent::tests -- --nocapture
+```
+
+### Testing Tools
+
+```bash
+# Test specific tools
+cargo test tools::hackernews
+cargo test tools::weather
+cargo test tools::telegram
+```
+
+### Testing Search
+
+```bash
+# Run search tests
+cargo test search
+cargo test bm25
+cargo test vector
 ```
 
 ## Known Issues
@@ -201,11 +258,33 @@ On Windows, you may encounter file locking errors during compilation:
 error: failed to remove ...: The process cannot access the file
 ```
 
-**Solution:** Wait a few seconds and try again, or close any processes that might be holding the files open.
+**Solution:** Wait a few seconds and try again, or close any processes that might be holding the files open:
+```powershell
+# PowerShell
+Get-Process horcrux -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# CMD
+taskkill /F /IM horcrux.exe 2>nul
+```
 
 ### SQLite Concurrency
 
 SQLite WAL mode is enabled, which allows concurrent reads but the tests currently run serially. If you add parallel test execution, ensure proper connection handling.
+
+### Environment Variables in Tests
+
+Some tests read environment variables. Create a `.env.test` file:
+```bash
+HORCRUX_LLM_URL=http://localhost:11434/v1
+HORCRUX_LLM_MODEL=llama3.1:8b
+HORCRUX_LLM_API_KEY=ollama
+```
+
+Load before running tests:
+```bash
+export $(cat .env.test | xargs)
+cargo test
+```
 
 ## Test Data
 
@@ -231,7 +310,9 @@ cargo install cargo-tarpaulin
 cargo tarpaulin --out Html
 
 # View report
-open tarpaulin-report.html
+open tarpaulin-report.html  # macOS
+xdg-open tarpaulin-report.html  # Linux
+start tarpaulin-report.html  # Windows
 ```
 
 ## Benchmarks
@@ -239,5 +320,25 @@ open tarpaulin-report.html
 To run benchmarks (if added):
 
 ```bash
+# Run all benchmarks
 cargo bench
+
+# Run specific benchmark
+cargo bench search_performance
 ```
+
+## Manual Testing Checklist
+
+Before releasing, manually test:
+
+- [ ] `horcrux setup` - Interactive wizard works
+- [ ] `horcrux agent` - Agent responds to queries
+- [ ] `horcrux agent --telegram` - Telegram bot works
+- [ ] `horcrux serve` - API server starts
+- [ ] `horcrux collection add` - Documents added
+- [ ] `horcrux update` - Indexing works
+- [ ] `horcrux search` - Search returns results
+- [ ] `horcrux query` - Hybrid search works
+- [ ] Skill creation - Agent can create new skills
+- [ ] Multi-turn conversation - Memory works
+- [ ] Cross-platform - Test on Windows, Linux, macOS

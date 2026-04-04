@@ -22,9 +22,9 @@ cargo --version
 
 ```bash
 # Navigate to project
-cd /g/Python\ Projects/miniclaw_agent
+cd horcrux
 
-# Build release binary
+# Build release binary (15MB, single file, no dependencies)
 cargo build --release
 
 # Binary location:
@@ -35,11 +35,14 @@ cargo build --release
 ### Test the Build
 
 ```bash
-# Run the setup wizard
-./target/release/horcrux.exe setup
+# Run the comprehensive setup wizard
+./target/release/horcrux setup
 
 # Or run agent directly
-./target/release/horcrux.exe agent
+./target/release/horcrux agent
+
+# Test knowledge search
+./target/release/horcrux search "test query"
 ```
 
 ---
@@ -50,23 +53,73 @@ cargo build --release
 
 ```bash
 # Navigate to project directory
-cd /g/Python\ Projects/miniclaw_agent
+cd horcrux
 
 # Initialize git (if not already done)
 git init
 
+# Create .gitignore (IMPORTANT!)
+cat > .gitignore << 'EOF'
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment variables (contains secrets!)
+.env
+.env.local
+.env.*.local
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+horcrux
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+EOF
+
+# Verify .env is ignored (CRITICAL - contains secrets!)
+git check-ignore -v .env
+# Should output: .gitignore:14:.env .env (or similar)
+
 # Add all files
 git add .
 
+# Check that .env is not staged
+git status
+# Should NOT show .env in "Changes to be committed"
+
 # First commit
-git commit -m "Initial commit: Horcrux AI Agent"
+git commit -m "Initial commit: Horcrux AI Agent with Knowledge Memory"
 ```
 
 ### Step 2: Create GitHub Repository
 
 1. Go to https://github.com/new
 2. Repository name: `horcrux` (or your preferred name)
-3. Description: "AI Agent with Knowledge Memory - built in Rust"
+3. Description: "AI Agent with Knowledge Memory - Multi-platform bots, skills, and semantic search - built in Rust"
 4. Choose: **Public** or **Private**
 5. **DO NOT** initialize with README (we already have one)
 6. Click **Create repository**
@@ -106,8 +159,22 @@ git status
 git add .
 git commit -m "Ready for release v0.1.0"
 
-# Step 2: Create a version tag
+# Step 2: Create a version tag (single line)
 git tag -a v0.1.0 -m "First release - Horcrux AI Agent"
+
+# OR use a file for multi-line message:
+cat > /tmp/tagmsg.txt << 'EOF'
+First release - Horcrux AI Agent
+
+Features:
+- ReAct-based AI agent with tool use
+- Knowledge base with BM25 + semantic search
+- 15+ built-in skills with auto-creation
+- Multi-platform messaging bots
+- REST API and Web UI
+- Cross-platform: Windows, Linux, macOS
+EOF
+git tag -a v0.1.0 -F /tmp/tagmsg.txt
 
 # Step 3: Push the tag (this triggers the build)
 git push origin v0.1.0
@@ -127,18 +194,38 @@ git push origin v0.1.0
 4. Release title: `v0.1.0 - Initial Release`
 5. Description:
    ```markdown
-   ## What's New
-   - AI Agent with tool use
-   - Knowledge base with semantic search
-   - 15+ built-in skills
-   - Telegram bot support
-   - Cross-platform: Windows, Linux, macOS
-   
-   ## Downloads
-   - Windows: `horcrux-windows-x64.exe`
-   - Linux: `horcrux-linux-x64`
-   - macOS Intel: `horcrux-macos-x64`
-   - macOS ARM: `horcrux-macos-arm64`
+   ## 🧙 Horcrux v0.1.0
+
+   AI Agent with Knowledge Memory
+
+   ### Features
+   - 🤖 ReAct-based agent with automatic skill creation
+   - 🧠 Semantic search over documents (BM25 + Vector)
+   - 🛠️ 15+ built-in skills
+   - 📱 Multi-platform bots: Telegram, Discord, Slack, WhatsApp, Matrix
+   - 🌐 REST API + Web UI
+   - 🔌 MCP Server for Claude Desktop
+   - 🔄 Scheduled tasks support
+   - 👥 Multi-agent mode
+   - ⚡ 15MB single binary, no dependencies
+   - 🌐 Cross-platform: Windows, Linux, macOS (x64 + ARM64)
+
+   ### Downloads
+   | Platform | Binary |
+   |----------|--------|
+   | Windows x64 | `horcrux-windows-x64.exe` |
+   | Linux x64 | `horcrux-linux-x64` |
+   | macOS Intel | `horcrux-macos-x64` |
+   | macOS ARM64 | `horcrux-macos-arm64` |
+
+   ### Quick Start
+   ```bash
+   # Download, then run setup
+   ./horcrux setup
+
+   # Start the agent
+   ./horcrux agent
+   ```
    ```
 6. Click **Publish release**
 
@@ -169,7 +256,10 @@ git push origin v0.1.0
 
 # Test locally
 cargo build --release
-./target/release/horcrux.exe agent
+./target/release/horcrux agent
+
+# Run tests
+cargo test
 
 # Commit changes
 git add .
@@ -182,10 +272,15 @@ git push origin main
 ### Creating a New Release
 
 ```bash
-# After committing all changes
+# Update version in Cargo.toml
+# version = "0.2.0"
 
-# Update version tag
-git tag -a v0.2.0 -m "Add multi-agent support and new skills"
+# After committing all changes
+git add .
+git commit -m "Bump version to 0.2.0"
+
+# Create new tag
+git tag -a v0.2.0 -m "Version 0.2.0 - Add feature X"
 
 # Push tag (triggers new builds)
 git push origin v0.2.0
@@ -215,6 +310,9 @@ git checkout main
 
 # Merge branch
 git merge feature/my-feature
+
+# Delete branch
+git branch -d feature/my-feature
 ```
 
 ### Version Numbering
@@ -239,6 +337,10 @@ cargo build --release
 # Update dependencies
 cargo update
 cargo build --release
+
+# Windows: Kill running process if file locked
+taskkill /F /IM horcrux.exe 2>nul
+cargo build --release
 ```
 
 ### Git Push Rejected
@@ -254,8 +356,13 @@ git push origin main
 ### Release Not Triggering
 
 1. Check that `.github/workflows/release.yml` exists
-2. Make sure you're pushing a tag (not just committing)
+2. Make sure you're pushing a tag (not just committing):
+   ```bash
+   git tag -a v0.1.0 -m "Release message"
+   git push origin v0.1.0
+   ```
 3. Go to **Actions** tab on GitHub to see build status
+4. Check that Actions are enabled in repository settings
 
 ---
 
@@ -263,13 +370,15 @@ git push origin main
 
 Before creating a release:
 
-- [ ] Code compiles without errors
+- [ ] Code compiles without errors (`cargo build --release`)
 - [ ] Tests pass (`cargo test`)
 - [ ] README.md is up to date
-- [ ] CHANGELOG.md added (optional)
+- [ ] All documentation reviewed (SETUP.md, TESTING.md, etc.)
+- [ ] `.gitignore` includes `.env`, `target/`, `*.db` (CRITICAL!)
 - [ ] Version number updated in `Cargo.toml`
 - [ ] All changes committed
 - [ ] GitHub Actions workflow file present
+- [ ] `.env` file NOT committed (verify with `git status`)
 
 ---
 
@@ -277,10 +386,11 @@ Before creating a release:
 
 After your first release:
 
-1. **Share the release** - Post on social media, forums
+1. **Share the release** - Post on social media, Reddit r/rust, Hacker News
 2. **Get feedback** - Create GitHub Issues for bugs/features
 3. **Iterate** - Make improvements based on feedback
 4. **Build community** - Add CONTRIBUTING.md, Code of Conduct
+5. **Consider crates.io** - Publish as Rust crate (see PUBLISH.md)
 
 ---
 
