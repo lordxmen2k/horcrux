@@ -21,20 +21,21 @@ Horcrux is a **blazing-fast**, **privacy-first** AI agent built in Rust. It comb
 
 ## ✨ What Makes Horcrux Special
 
-| Feature | Horcrux | OpenClaw | Nous Hermes | Claude Code |
-|---------|---------|----------|-------------|-------------|
-| **Binary Size** | ~15MB | ~200MB+ | ~150MB+ | Cloud only |
-| **Startup Time** | ~50ms | ~2-5s | ~3s | Instant |
-| **Memory Usage** | ~50MB | ~500MB | ~400MB | N/A |
-| **Offline Capable** | ✅ Yes (Ollama) | ❌ No | ❌ No | ❌ No |
-| **Self-Hosted** | ✅ Full control | ❌ Cloud | ❌ Cloud | ❌ Cloud |
-| **Multi-Platform Bots** | ✅ 5 platforms | ❌ None | ❌ None | ❌ None |
-| **Auto Skill Creation** | ✅ Built-in | ❌ Manual | ❌ Manual | ❌ Manual |
-| **Session Search (FTS5)** | ✅ Native | ❌ No | ❌ No | ❌ No |
-| **MCP Client/Server** | ✅ Both | ❌ No | ❌ No | ✅ Client |
-| **Voice Transcription** | ✅ Built-in | ❌ No | ❌ No | ❌ No |
-| **Subagents** | ✅ Parallel | ❌ No | ❌ No | ❌ No |
-| **Cost** | **FREE** (local) | $20-50/mo | Subscription | $20/mo |
+| Feature | Horcrux | Notes |
+|---------|---------|-------|
+| **Binary Size** | ~15MB | Single static Rust binary |
+| **Startup Time** | ~50ms | Near-instant cold start |
+| **Memory Usage** | ~50MB | Efficient Rust + SQLite |
+| **Offline Capable** | ✅ Yes | Runs with Ollama locally |
+| **Self-Hosted** | ✅ Full control | Your data stays local |
+| **Multi-Platform Bots** | ✅ 5 platforms | Telegram, Discord, Slack, WhatsApp, Matrix |
+| **Auto Skill Creation** | ✅ Built-in | Detects & saves workflows automatically |
+| **Session Search (FTS5)** | ✅ Native | Full-text search on all conversations |
+| **MCP Client/Server** | ✅ Both | Connect to MCP ecosystem |
+| **Voice Transcription** | ✅ Built-in | Whisper/Deepgram integration |
+| **Subagents** | ✅ Parallel | Concurrent task execution |
+| **Context Files** | ✅ AGENTS.md | Per-project configuration |
+| **Cost** | **FREE** | Open source, no API fees when using Ollama |
 
 ## 🚀 Features at a Glance
 
@@ -639,22 +640,24 @@ env = { GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_xxx" }
 
 ## 🤝 Comparison with Alternatives
 
-| Feature | Horcrux | OpenClaw | Nous Hermes | Claude Code | LangChain |
-|---------|---------|----------|-------------|-------------|-----------|
-| **Self-Hosted** | ✅ Full | ❌ Cloud | ❌ Cloud | ❌ Cloud | ⚠️ Partial |
-| **Offline** | ✅ Yes | ❌ No | ❌ No | ❌ No | ⚠️ Partial |
-| **Binary Size** | ~15MB | ~200MB | ~150MB | N/A | ~100MB+ |
-| **Startup** | 50ms | 2-5s | 3s | Instant | 1-2s |
-| **Multi-Bots** | ✅ 5 platforms | ❌ | ❌ | ❌ | ⚠️ Add-ons |
-| **Auto Skills** | ✅ Native | ❌ Manual | ❌ Manual | ❌ | ⚠️ Complex |
-| **Session Search** | ✅ FTS5 | ❌ | ❌ | ❌ | ⚠️ Add-ons |
-| **MCP Support** | ✅ Client+Server | ❌ | ❌ | ✅ Client | ⚠️ Partial |
-| **Voice Input** | ✅ Built-in | ❌ | ❌ | ❌ | ⚠️ Add-ons |
-| **Subagents** | ✅ Parallel | ❌ | ❌ | ❌ | ⚠️ Complex |
-| **Context Files** | ✅ AGENTS.md | ❌ | ❌ | ❌ | ❌ |
-| **Memory** | ✅ SQLite | ⚠️ Redis | ⚠️ Redis | ✅ Cloud | ⚠️ Varies |
-| **Cost** | **FREE** | $20-50/mo | Subscription | $20/mo | Varies |
-| **Privacy** | ✅ 100% local | ❌ Cloud | ❌ Cloud | ❌ Cloud | ⚠️ Varies |
+## 🤝 Why Choose Horcrux?
+
+| Feature | Horcrux | Benefits |
+|---------|---------|----------|
+| **Self-Hosted** | ✅ Full control | Your data never leaves your machine |
+| **Offline Capable** | ✅ Yes | Works with local Ollama models |
+| **Binary Size** | ~15MB | Tiny footprint, fast deployment |
+| **Startup Time** | ~50ms | Instant response |
+| **Multi-Platform Bots** | ✅ 5 platforms | One agent, many interfaces |
+| **Auto Skill Creation** | ✅ Native | Learns and remembers workflows |
+| **Session Search** | ✅ FTS5 | Find anything from past conversations |
+| **MCP Support** | ✅ Client+Server | Extensible tool ecosystem |
+| **Voice Transcription** | ✅ Built-in | Speak to your agent |
+| **Subagents** | ✅ Parallel | Divide and conquer complex tasks |
+| **Context Files** | ✅ AGENTS.md | Project-specific knowledge |
+| **Memory** | ✅ SQLite | Simple, reliable, no external deps |
+| **Cost** | **FREE** | Open source MIT license |
+| **Privacy** | ✅ 100% local | Complete data ownership |
 
 ## 📝 Contributing
 
