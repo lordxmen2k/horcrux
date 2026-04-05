@@ -152,8 +152,10 @@ impl EventHandler for DiscordHandler {
     }
 }
 
+/// Discord bot integration handle
 pub struct DiscordIntegration {
-    _client: serenity::Client,
+    // We keep the client running in a background task
+    _handle: tokio::task::JoinHandle<()>,
 }
 
 impl DiscordIntegration {
@@ -174,21 +176,19 @@ impl DiscordIntegration {
             config,
         };
 
-        let client = Client::builder(token, intents)
+        let mut client = Client::builder(token, intents)
             .event_handler(handler)
             .await
             .map_err(|e| anyhow::anyhow!("Discord client failed: {}", e))?;
 
         // Start the client in background
-        let mut client_clone = client; // serenity Client is not Clone
-        tokio::spawn(async move {
-            if let Err(e) = client_clone.start().await {
+        let handle = tokio::spawn(async move {
+            if let Err(e) = client.start().await {
                 eprintln!("❌ Discord client error: {}", e);
             }
         });
 
-        // Return placeholder — the real client is in the spawned task
-        // In production, keep a handle via Arc<Mutex<Client>>
-        Ok(Self { _client: panic!("see note above") })
+        println!("🤖 Discord integration started");
+        Ok(Self { _handle: handle })
     }
 }

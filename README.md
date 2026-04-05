@@ -2,7 +2,22 @@
 
 > Distributed intelligence for your tasks — part AI agent, part memory system
 
+[![Release](https://img.shields.io/github/v/release/lordxmen2k/horcrux)](https://github.com/lordxmen2k/horcrux/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Rust](https://img.shields.io/badge/built%20with-Rust-orange)](https://rust-lang.org)
+
 Horcrux is a **blazing-fast**, **privacy-first** AI agent built in Rust. It combines ReAct-based reasoning with persistent knowledge storage, multi-platform messaging bots, and automatic skill creation — all in a single 15MB binary with zero dependencies.
+
+## 🎉 What's New in v0.3.0
+
+- 🔍 **Session Search** - FTS5 full-text search across all conversation history
+- 🔌 **MCP Integration** - Both MCP client (connect to external servers) and server (for Claude Desktop)
+- 🎙️ **Voice Transcription** - Transcribe audio with Whisper/Deepgram APIs
+- ⏰ **Cron Scheduling** - Schedule recurring tasks with natural language
+- 🧠 **Dreaming** - Background memory consolidation (sleep → learn)
+- 📝 **Context Files (AGENTS.md)** - Per-project configuration and instructions
+- 🧬 **Subagents** - Parallel task execution with delegate_task and delegate_parallel tools
+- 💬 **Multi-Platform Bots** - Discord, Slack, WhatsApp, Telegram, Matrix all working
 
 ## ✨ What Makes Horcrux Special
 
@@ -15,6 +30,10 @@ Horcrux is a **blazing-fast**, **privacy-first** AI agent built in Rust. It comb
 | **Self-Hosted** | ✅ Full control | ❌ Cloud | ❌ Cloud | ❌ Cloud |
 | **Multi-Platform Bots** | ✅ 5 platforms | ❌ None | ❌ None | ❌ None |
 | **Auto Skill Creation** | ✅ Built-in | ❌ Manual | ❌ Manual | ❌ Manual |
+| **Session Search (FTS5)** | ✅ Native | ❌ No | ❌ No | ❌ No |
+| **MCP Client/Server** | ✅ Both | ❌ No | ❌ No | ✅ Client |
+| **Voice Transcription** | ✅ Built-in | ❌ No | ❌ No | ❌ No |
+| **Subagents** | ✅ Parallel | ❌ No | ❌ No | ❌ No |
 | **Cost** | **FREE** (local) | $20-50/mo | Subscription | $20/mo |
 
 ## 🚀 Features at a Glance
@@ -24,26 +43,34 @@ Horcrux is a **blazing-fast**, **privacy-first** AI agent built in Rust. It comb
 - **Tool Use** - HTTP requests, shell commands, file operations, web search
 - **Auto Skill Creation** - Detects repetitive workflows and offers to save them
 - **15+ Built-in Skills** - Hacker News, weather, crypto, git, Docker, and more
+- **Subagents** - Spawn parallel subagents for concurrent task execution
 
 ### 💬 Multi-Platform Messaging Bots
 Chat with your agent from anywhere:
 - **Telegram** - Full bot support with inline commands
 - **Discord** - Server bot with slash commands
-- **Slack** - Workspace integration
-- **WhatsApp** - Business API support
+- **Slack** - Workspace integration via Events API
+- **WhatsApp** - Business API support via Twilio
 - **Matrix** - Decentralized chat protocol
 
 ### 🧠 Knowledge & Memory
 - **Semantic Search** - BM25 + vector search with re-ranking
+- **Session Search** - FTS5 full-text search across conversation history
 - **Persistent Memory** - SQLite-backed conversation history
 - **Document Indexing** - Auto-chunking and embedding of your files
-- **Smart Context** - Automatically retrieves relevant past conversations
+- **Dreaming** - Background memory consolidation (sleep → learn)
 
-### 🌐 Server & API
+### 🌐 Server & Integrations
 - **REST API** - HTTP endpoints for external integrations
 - **Web UI** - Browser-based chat interface
-- **MCP Server** - Model Context Protocol for Claude Desktop
-- **Webhook Support** - Custom HTTP endpoints
+- **MCP Server** - Model Context Protocol server for Claude Desktop
+- **MCP Client** - Connect to external MCP servers for extended tools
+- **Webhook Support** - Custom HTTP endpoints for Slack/WhatsApp
+
+### 📝 Context & Configuration
+- **Context Files (AGENTS.md)** - Per-project configuration and instructions
+- **Voice Transcription** - Convert audio messages to text (Whisper API)
+- **Cron Scheduling** - Schedule recurring tasks with natural language
 
 ### ⚙️ Advanced Features
 - **Scheduled Tasks** - Run skills on cron schedules
@@ -186,6 +213,161 @@ horcrux query "how do I handle errors in tokio?"
 
 # Vector semantic search
 horcrux vsearch "distributed systems concepts"
+
+# Search conversation history across sessions
+horcrux session-search "docker setup discussion"
+```
+
+### Session Search (FTS5)
+
+Search through all past conversations using full-text search:
+
+```bash
+# Search all sessions
+horcrux session-search "kubernetes deployment"
+
+# Search within specific session
+horcrux session-search "error handling" --session discord_12345
+
+# Advanced FTS5 queries
+horcrux session-search "rust AND async NOT tokio"
+horcrux session-search '"exact phrase"'
+```
+
+### Voice Transcription
+
+Convert voice messages and audio files to text:
+
+```bash
+# Transcribe audio file
+horcrux transcribe recording.wav
+
+# Specify language
+horcrux transcribe meeting.mp3 --language en
+
+# The agent can also receive voice messages via Telegram/WhatsApp
+# and automatically transcribe them
+```
+
+### Scheduled Tasks (Cron)
+
+Schedule recurring tasks with natural language or cron syntax:
+
+```bash
+# Schedule daily report
+horcrux schedule "Daily standup summary" --cron "0 9 * * 1-5"
+
+# Schedule with natural language
+horcrux schedule "weekly backup" --every "Monday at 3am"
+
+# List scheduled tasks
+horcrux schedules list
+
+# Cancel a task
+horcrux schedules cancel task_123
+```
+
+### Context Files (AGENTS.md)
+
+Create project-specific context that the agent automatically loads:
+
+```bash
+# Create AGENTS.md in your project
+horcrux context init
+
+# Or manually create AGENTS.md:
+cat > AGENTS.md << 'EOF'
+---
+project: My Awesome Project
+description: A Rust web API with Axum
+technologies:
+  - Rust
+  - Axum
+  - PostgreSQL
+  - SQLx
+---
+
+## Conventions
+- Use anyhow for error handling
+- Prefer async/await over callbacks
+- Database queries must use prepared statements
+EOF
+```
+
+The agent automatically reads `AGENTS.md` from the current directory and applies the context.
+
+### MCP Integration
+
+**MCP Server** - Use Horcrux as an MCP server for Claude Desktop:
+```bash
+# Start MCP server
+horcrux mcp serve
+
+# Add to Claude Desktop config:
+# {
+#   "mcpServers": {
+#     "horcrux": {
+#       "command": "horcrux",
+#       "args": ["mcp", "serve"]
+#     }
+#   }
+# }
+```
+
+**MCP Client** - Connect to external MCP servers:
+```bash
+# Configure MCP servers in ~/.horcrux/mcp.toml
+[[servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/docs"]
+
+[[servers]]
+name = "github"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+env = { GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_xxx" }
+```
+
+### Subagents (Parallel Execution)
+
+Spawn multiple subagents to work on tasks in parallel:
+
+```bash
+# The agent can delegate tasks to subagents
+💬 You: Research Python, Rust, and Go web frameworks and compare them
+
+🤖 Agent: I'll spawn 3 subagents to research each language in parallel...
+   [Subagent 1] Researching Python frameworks...
+   [Subagent 2] Researching Rust frameworks...
+   [Subagent 3] Researching Go frameworks...
+   
+   Aggregating results...
+   
+   | Language | Top Framework | Pros | Cons |
+   |----------|---------------|------|------|
+   | Python   | FastAPI       | ...  | ...  |
+   | Rust     | Axum          | ...  | ...  |
+   | Go       | Gin           | ...  | ...  |
+```
+
+### Dreaming (Memory Consolidation)
+
+The "dreaming" process runs periodically (default: 3am daily) to:
+- Review recent conversations
+- Extract important insights
+- Consolidate memories
+- Identify patterns
+
+```bash
+# Check dreamer status
+horcrux dream status
+
+# Force a dream run now
+horcrux dream now
+
+# Configure dreaming schedule
+horcrux config set dream.schedule "0 3 * * *"
 ```
 
 ### Messaging Bots
@@ -337,28 +519,30 @@ ollama pull llama3.1:8b
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        HORCRUX AGENT                            │
-│  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────┐  │
-│  │  ReAct   │  │  Tools   │  │   Memory    │  │   Skills     │  │
-│  │  Loop    │◄─┤ Registry ├─►│  (SQLite)   │◄─┤  Library     │  │
-│  └────┬─────┘  └────┬─────┘  └─────────────┘  │  (Built-in   │  │
-│       │             │                        │  + Dynamic)    │  │
-│       └─────────────┘                        └────────────────┘  │
-│              │                                                  │
-│       ┌──────┴──────────────────────────────────────┐           │
-│       ▼             ▼             ▼                 ▼           │
-│  ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────────┐  │
-│  │  LLM   │  │Telegram  │  │ Discord  │  │   REST API      │  │
-│  │(Kimi/) │  │  Bot     │  │   Bot    │  │   Server        │  │
-│  │(Ollama)│  │          │  │          │  │                 │  │
-│  └─────────┘  └──────────┘  └──────────┘  └─────────────────┘  │
-│                                                                │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
-│  │  Slack   │  │ WhatsApp │  │  Matrix  │  │    Web UI      │  │
-│  │   Bot    │  │   Bot    │  │   Bot    │  │                │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           HORCRUX AGENT v0.3.0                          │
+│  ┌──────────┐  ┌──────────┐  ┌─────────────┐  ┌──────────────────────┐  │
+│  │  ReAct   │  │  Tools   │  │   Memory    │  │       Skills         │  │
+│  │  Loop    │◄─┤ Registry ├─►│  (SQLite)   │◜─┤  • Built-in (106+)   │  │
+│  └────┬─────┘  └────┬─────┘  │  + FTS5     │  │  • Auto-created      │  │
+│       │             │        │  + Sessions │  │  • Dynamic           │  │
+│       └─────────────┘        └──────┬──────┘  └──────────────────────┘  │
+│              │                      │                                   │
+│       ┌──────┴──────────────────────┴──────────┐                       │
+│       ▼              ▼              ▼           ▼                       │
+│  ┌─────────┐   ┌──────────┐   ┌──────────┐  ┌──────────────────────┐   │
+│  │  LLM   │   │Telegram  │   │ Discord  │  │   REST API / Web UI  │   │
+│  │(Kimi/) │   │  Bot     │   │   Bot    │  │   MCP Server/Client  │   │
+│  │(Ollama)│   │          │   │          │  │   Voice / Scheduler  │   │
+│  └─────────┘   └──────────┘   └──────────┘  └──────────────────────┘   │
+│                                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────────────┐  │
+│  │  Slack   │  │ WhatsApp │  │  Matrix  │  │   Subagents (Parallel) │  │
+│  │   Bot    │  │   Bot    │  │   Bot    │  │   Dreaming / Context   │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────────────────┘  │
+│                                                                         │
+│  Features: Session Search • MCP • Voice • Cron • Context Files • Subagents │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 🔧 Configuration Reference
@@ -379,9 +563,19 @@ HORCRUX_EMBED_MODEL=nomic-embed-text
 TELEGRAM_BOT_TOKEN=your-token
 DISCORD_BOT_TOKEN=your-token
 SLACK_BOT_TOKEN=xoxb-your-token
-WHATSAPP_PHONE=+1234567890
+SLACK_SIGNING_SECRET=your-secret
+WHATSAPP_ACCOUNT_SID=ACxxx
+WHATSAPP_AUTH_TOKEN=your-token
+WHATSAPP_FROM_NUMBER=whatsapp:+14155238886
 MATRIX_HOMESERVER=https://matrix.org
 MATRIX_ACCESS_TOKEN=your-token
+
+# === Voice Transcription ===
+# Configure in ~/.horcrux/config.toml:
+# [voice]
+# provider = "openai"  # or "deepgram"
+# api_key = "sk-..."
+# model = "whisper-1"
 
 # === Server ===
 API_ENABLED=true
@@ -398,6 +592,51 @@ SCHEDULED_TASKS_ENABLED=true
 BACKUP_FREQUENCY=daily
 ```
 
+### Config File (~/.horcrux/config.toml)
+
+```toml
+[llm]
+url = "https://api.moonshot.ai/v1"
+model = "moonshot-v1-8k"
+api_key = "sk-your-key"
+
+[embed]
+url = "http://localhost:11434/v1"
+model = "nomic-embed-text"
+
+[voice]
+provider = "openai"
+api_key = "sk-..."
+model = "whisper-1"
+language = "en"
+
+[web_search]
+provider = "tavily"
+api_key = "tvly-..."
+
+[dream]
+enabled = true
+schedule = "0 3 * * *"  # Daily at 3am
+min_conversations = 5
+lookback_hours = 24
+importance_threshold = 0.7
+
+[scheduler]
+enabled = true
+
+# MCP Servers to connect to
+[[mcp.servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+
+[[mcp.servers]]
+name = "github"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+env = { GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_xxx" }
+```
+
 ## 🤝 Comparison with Alternatives
 
 | Feature | Horcrux | OpenClaw | Nous Hermes | Claude Code | LangChain |
@@ -408,6 +647,11 @@ BACKUP_FREQUENCY=daily
 | **Startup** | 50ms | 2-5s | 3s | Instant | 1-2s |
 | **Multi-Bots** | ✅ 5 platforms | ❌ | ❌ | ❌ | ⚠️ Add-ons |
 | **Auto Skills** | ✅ Native | ❌ Manual | ❌ Manual | ❌ | ⚠️ Complex |
+| **Session Search** | ✅ FTS5 | ❌ | ❌ | ❌ | ⚠️ Add-ons |
+| **MCP Support** | ✅ Client+Server | ❌ | ❌ | ✅ Client | ⚠️ Partial |
+| **Voice Input** | ✅ Built-in | ❌ | ❌ | ❌ | ⚠️ Add-ons |
+| **Subagents** | ✅ Parallel | ❌ | ❌ | ❌ | ⚠️ Complex |
+| **Context Files** | ✅ AGENTS.md | ❌ | ❌ | ❌ | ❌ |
 | **Memory** | ✅ SQLite | ⚠️ Redis | ⚠️ Redis | ✅ Cloud | ⚠️ Varies |
 | **Cost** | **FREE** | $20-50/mo | Subscription | $20/mo | Varies |
 | **Privacy** | ✅ 100% local | ❌ Cloud | ❌ Cloud | ❌ Cloud | ⚠️ Varies |

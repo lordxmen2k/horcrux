@@ -17,12 +17,14 @@ pub mod llm;
 pub mod memory;
 pub mod personality;
 pub mod react;
+pub mod subagent;
 
 pub use compaction::{CompactionConfig, CompactionManager};
 pub use config_cli::{ConfigWizard, show_current_config};
 pub use llm::{ChatMessage, LlmClient, LlmConfig, LlmResponse, ToolDefinition, ToolCall};
 pub use memory::ConversationMemory;
 pub use react::ReActAgent;
+pub use subagent::{SubagentExecutor, SubagentTask, SubagentResult, DelegateTaskTool, DelegateParallelTool};
 use crate::tools::ToolRegistry;
 
 // ToolRegistry re-exported below

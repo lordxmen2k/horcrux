@@ -131,6 +131,33 @@ impl Db {
             );
 
             CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, created_at);
+
+            -- FTS5 for conversation search (session_search tool)
+            CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts USING fts5(
+                session_id UNINDEXED,
+                role UNINDEXED,
+                content,
+                content='conversations',
+                content_rowid='rowid'
+            );
+
+            -- Triggers to keep conversations FTS in sync
+            CREATE TRIGGER IF NOT EXISTS conversations_ai AFTER INSERT ON conversations BEGIN
+                INSERT INTO conversations_fts(rowid, session_id, role, content)
+                VALUES (new.rowid, new.session_id, new.role, new.content);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS conversations_au AFTER UPDATE ON conversations BEGIN
+                INSERT INTO conversations_fts(conversations_fts, rowid, session_id, role, content)
+                VALUES ('delete', old.rowid, old.session_id, old.role, old.content);
+                INSERT INTO conversations_fts(rowid, session_id, role, content)
+                VALUES (new.rowid, new.session_id, new.role, new.content);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS conversations_ad AFTER DELETE ON conversations BEGIN
+                INSERT INTO conversations_fts(conversations_fts, rowid, session_id, role, content)
+                VALUES ('delete', old.rowid, old.session_id, old.role, old.content);
+            END;
         ")?;
 
         Ok(())
@@ -495,6 +522,62 @@ impl Db {
         )?;
         Ok(n)
     }
+
+    // ── Session Search (FTS5) ──────────────────────────────────────────────────
+
+    pub fn search_conversations(&self, query: &str, session_id: Option<&str>, limit: usize) -> Result<Vec<ConversationSearchResult>> {
+        let sql = if let Some(sid) = session_id {
+            // Search within specific session
+            "SELECT c.id, c.session_id, c.role, c.content, c.created_at, 
+                    rank
+             FROM conversations_fts fts
+             JOIN conversations c ON c.rowid = fts.rowid
+             WHERE conversations_fts MATCH ?1 AND fts.session_id = ?2
+             ORDER BY rank
+             LIMIT ?3"
+                .to_string()
+        } else {
+            // Search across all sessions
+            "SELECT c.id, c.session_id, c.role, c.content, c.created_at, 
+                    rank
+             FROM conversations_fts fts
+             JOIN conversations c ON c.rowid = fts.rowid
+             WHERE conversations_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2"
+                .to_string()
+        };
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        
+        let rows = if let Some(sid) = session_id {
+            stmt.query_map(params![query, sid, limit as i64], |row| {
+                Ok(ConversationSearchResult {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    created_at: row.get(4)?,
+                    rank: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            stmt.query_map(params![query, limit as i64], |row| {
+                Ok(ConversationSearchResult {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    created_at: row.get(4)?,
+                    rank: row.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        
+        Ok(rows)
+    }
 }
 
 // ── Conversation Types ───────────────────────────────────────────────────────
@@ -516,6 +599,16 @@ pub struct ConversationSession {
     pub started_at: String,
     pub last_active: String,
     pub message_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationSearchResult {
+    pub id: i64,
+    pub session_id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+    pub rank: f64,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

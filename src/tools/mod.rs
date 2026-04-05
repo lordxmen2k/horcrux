@@ -10,9 +10,12 @@ pub mod filesystem;
 pub mod config_manager;
 pub mod http;
 pub mod image_search;
+pub mod mcp;
 pub mod search;
+pub mod session_search;
 pub mod shell;
 pub mod skills;
+pub mod voice;
 pub mod web_search;
 pub mod skills_library;
 pub mod telegram;
@@ -21,8 +24,11 @@ pub use filesystem::FileSystemTool;
 pub use config_manager::ConfigManagerTool;
 pub use http::HttpTool;
 pub use image_search::ImageSearchTool;
+pub use mcp::{McpToolWrapper, McpToolManager};
 pub use search::SearchTool;
+pub use session_search::SessionSearchTool;
 pub use shell::ShellTool;
+pub use voice::VoiceTranscriptionTool;
 pub use web_search::WebSearchTool;
 pub use skills::{CreateSkillTool, ListSkillsTool, Skill, SkillImplementation, SkillManager, SkillTool};
 pub use skills_library::{find_similar_skill, get_builtin_skills};
@@ -115,10 +121,18 @@ impl ToolRegistry {
 
     /// Create a default registry with all built-in tools
     pub fn default_with_db(db_path: std::path::PathBuf) -> Self {
+        Self::default_with_db_and_mcp(db_path, None)
+    }
+
+    /// Create a registry with built-in tools and optional MCP client
+    pub fn default_with_db_and_mcp(db_path: std::path::PathBuf, mcp_client: Option<Arc<crate::mcp::McpClient>>) -> Self {
         let mut registry = Self::new();
         
         // Register search tool
         registry.register(Arc::new(SearchTool::new(db_path.clone())));
+        
+        // Register session search tool (FTS5 conversation search)
+        registry.register(Arc::new(SessionSearchTool::new(db_path.clone())));
         
         // Register filesystem tool
         registry.register(Arc::new(FileSystemTool::new()));
@@ -139,6 +153,9 @@ impl ToolRegistry {
         // Register Telegram tool
         registry.register(Arc::new(TelegramTool::new()));
         
+        // Register voice transcription tool
+        registry.register(Arc::new(VoiceTranscriptionTool::new()));
+        
         // Register Skills tools (create_skill, list_skills, etc.)
         // Try project directory first, then fall back to data dir
         let skills_dir = if std::path::Path::new("skills").exists() {
@@ -150,6 +167,14 @@ impl ToolRegistry {
         };
         registry.register(Arc::new(CreateSkillTool::new(skills_dir)));
         // ListSkillsTool removed - skills already injected into system prompt
+        
+        // Register MCP tools if client is provided
+        if let Some(client) = mcp_client {
+            let manager = McpToolManager::new(client);
+            for tool in manager.get_tools() {
+                registry.register(Arc::new(tool));
+            }
+        }
         
         registry
     }

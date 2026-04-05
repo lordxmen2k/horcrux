@@ -104,6 +104,8 @@ async-stream = "0.3"
 urlencoding = "2"
 tempfile = "3"
 toml = "0.8"
+cron = "0.16.0"
+serde_yaml = "0.9.34"
 
 [dev-dependencies]
 tempfile = "3"
