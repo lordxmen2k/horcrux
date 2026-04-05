@@ -44,3 +44,8 @@ coverage/
 # Backup files
 *.bak
 *.backup
+
+# Temporary reference files
+temp_hermes/
+temp_*
+*.py
