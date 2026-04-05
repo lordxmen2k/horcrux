@@ -279,24 +279,38 @@ impl TelegramAgentBot {
                     
                     async move {
                         if let Some(text) = msg.text() {
-                            println!("📩 Message from {}: {}", 
-                                msg.from().and_then(|u| u.username.clone())
-                                    .unwrap_or_else(|| "Unknown".to_string()),
-                                text
-                            );
+                            let username = msg.from().and_then(|u| u.username.clone())
+                                .unwrap_or_else(|| "Unknown".to_string());
+                            println!("📩 Message from {}: {}", username, text);
 
+                            // Send typing indicator immediately
+                            let chat_id = msg.chat.id;
+                            let _ = bot.send_chat_action(chat_id, teloxide::types::ChatAction::Typing).await;
+                            
                             // Create agent and process message
                             let config = crate::agent::AgentConfig::new(db_path);
                             match crate::agent::Agent::new(config) {
                                 Ok(mut agent) => {
-                                    match agent.run(text).await {
-                                        Ok(response) => {
+                                    // Periodically refresh typing indicator every 4 seconds
+                                    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(4));
+                                    let response = tokio::select! {
+                                        result = agent.run(text) => result,
+                                        _ = interval.tick() => {
+                                            let _ = bot.send_chat_action(chat_id, teloxide::types::ChatAction::Typing).await;
+                                            agent.run(text).await
+                                        }
+                                    };
+                                    
+                                    match response {
+                                        Ok(response_text) => {
                                             // Send response back
-                                            let _ = bot.send_message(msg.chat.id, &response).await;
+                                            if let Err(e) = bot.send_message(chat_id, &response_text).await {
+                                                eprintln!("❌ Failed to send message: {}", e);
+                                            }
                                         }
                                         Err(e) => {
                                             let _ = bot.send_message(
-                                                msg.chat.id, 
+                                                chat_id, 
                                                 format!("❌ Error: {}", e)
                                             ).await;
                                         }
@@ -304,7 +318,7 @@ impl TelegramAgentBot {
                                 }
                                 Err(e) => {
                                     let _ = bot.send_message(
-                                        msg.chat.id,
+                                        chat_id,
                                         format!("❌ Failed to initialize agent: {}", e)
                                     ).await;
                                 }

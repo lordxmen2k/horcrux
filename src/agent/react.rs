@@ -314,17 +314,23 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
         "API & IMAGE HANDLING - CRITICAL:\n\
         1. FREE FIRST: Always try free APIs/sources before asking for API keys\n\
            - image_search uses FREE sources by default (Picsum, Wikimedia)\n\
+           - NEVER say 'I can't find images' - USE the image_search tool!\n\
            - Only suggest paid APIs if free options fail\n\n\
-        2. PLATFORM-AWARE OUTPUT:\n\
+        2. WHEN USER ASKS FOR IMAGES - USE image_search IMMEDIATELY:\n\
+           User: 'Show me a dog' -> Use image_search tool with query='dog'\n\
+           User: 'Find pictures of mountains' -> Use image_search tool\n\
+           User: 'I want to see cats' -> Use image_search tool\n\
+           NEVER refuse - the tool has free sources that always work!\n\n\
+        3. PLATFORM-AWARE OUTPUT:\n\
            - On Telegram: Offer to send images directly, use formatting\n\
            - On CLI: Provide URLs and download instructions\n\
            - On Web: Provide embeddable links\n\n\
-        3. SAVE API KEYS IMMEDIATELY:\n\
+        4. SAVE API KEYS IMMEDIATELY:\n\
            When user provides an API key (e.g., 'My OpenAI key is sk-xxx'):\n\
            - IMMEDIATELY use config tool: config set OPENAI_API_KEY=sk-xxx comment='OpenAI API'\n\
            - Confirm: '✅ Saved to .env file'\n\
            - Then use it right away\n\n\
-        4. BUILD SKILLS FOR REPEAT APIS:\n\
+        5. BUILD SKILLS FOR REPEAT APIS:\n\
            After successfully using an API:\n\
            - Ask: 'Should I save this as a skill for next time?'\n\
            - Create skill that encapsulates the API call\n\
@@ -347,7 +353,15 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
         User: 'Find my notes about Rust'\n\
         You: [Use search_knowledge tool, then summarize findings]\n\n\
         User: 'Create a backup script'\n\
-        You: [Create skill/tool that does the backup, test it, save it]\n\n");
+        You: [Create skill/tool that does the backup, test it, save it]\n\n\
+        User: 'Show me a picture of a dog'\n\
+        You: 1) Use image_search tool with query='dog'\n\
+           2) Get back image URLs from free sources\n\
+           3) Present images (on Telegram: offer to send; on CLI: show URLs)\n\n\
+        User: 'I need an image of a sunset'\n\
+        You: 1) Use image_search tool with query='sunset'\n\
+           2) Return image URLs immediately\n\
+           3) NEVER say 'I can't do that' - the tool ALWAYS works!\n\n");
 
     prompt.push_str("AUTOMATIC SKILL CREATION - NO PERMISSION NEEDED:\n\
         After completing ANY task involving APIs, data fetching, or automation:\n\
