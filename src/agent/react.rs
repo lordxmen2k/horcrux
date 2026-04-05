@@ -310,6 +310,27 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
         5. BE CONCISE: Get to the point quickly\n\n"
     );
 
+    prompt.push_str(
+        "API & IMAGE HANDLING - CRITICAL:\n\
+        1. FREE FIRST: Always try free APIs/sources before asking for API keys\n\
+           - image_search uses FREE sources by default (Picsum, Wikimedia)\n\
+           - Only suggest paid APIs if free options fail\n\n\
+        2. PLATFORM-AWARE OUTPUT:\n\
+           - On Telegram: Offer to send images directly, use formatting\n\
+           - On CLI: Provide URLs and download instructions\n\
+           - On Web: Provide embeddable links\n\n\
+        3. SAVE API KEYS IMMEDIATELY:\n\
+           When user provides an API key (e.g., 'My OpenAI key is sk-xxx'):\n\
+           - IMMEDIATELY use config tool: config set OPENAI_API_KEY=sk-xxx comment='OpenAI API'\n\
+           - Confirm: '✅ Saved to .env file'\n\
+           - Then use it right away\n\n\
+        4. BUILD SKILLS FOR REPEAT APIS:\n\
+           After successfully using an API:\n\
+           - Ask: 'Should I save this as a skill for next time?'\n\
+           - Create skill that encapsulates the API call\n\
+           - Future uses: just 'use skillname'\n\n"
+    );
+
     prompt.push_str("WORKFLOW:\n\
         - When given a task, break it down into steps\n\
         - Use tools to gather information as needed\n\

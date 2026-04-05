@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod filesystem;
+pub mod config_manager;
 pub mod http;
+pub mod image_search;
 pub mod search;
 pub mod shell;
 pub mod skills;
@@ -15,7 +17,9 @@ pub mod skills_library;
 pub mod telegram;
 
 pub use filesystem::FileSystemTool;
+pub use config_manager::ConfigManagerTool;
 pub use http::HttpTool;
+pub use image_search::ImageSearchTool;
 pub use search::SearchTool;
 pub use shell::ShellTool;
 pub use skills::{CreateSkillTool, ListSkillsTool, Skill, SkillImplementation, SkillManager, SkillTool};
@@ -121,7 +125,9 @@ impl ToolRegistry {
         registry.register(Arc::new(ShellTool::new()));
         
         // Register HTTP tool
+        registry.register(Arc::new(ConfigManagerTool::new()));
         registry.register(Arc::new(HttpTool::new()));
+        registry.register(Arc::new(ImageSearchTool::new()));
         
         // Register Telegram tool
         registry.register(Arc::new(TelegramTool::new()));

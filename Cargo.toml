@@ -5,8 +5,8 @@ edition = "2021"
 authors = ["Your Name <you@example.com>"]
 description = "AI Agent with Knowledge Memory - Multi-platform bots, skills, and semantic search"
 license = "MIT"
-repository = "https://github.com/yourusername/horcrux"
-homepage = "https://github.com/yourusername/horcrux"
+repository = "https://github.com/lordxmen2k/horcrux"
+homepage = "https://github.com/lordxmen2k/horcrux"
 documentation = "https://docs.rs/horcrux"
 readme = "README.md"
 keywords = ["ai", "agent", "llm", "memory", "semantic-search", "telegram", "discord", "bot", "rag"]
@@ -93,6 +93,7 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "fs"], default-features = false }
 futures = "0.3"
 async-stream = "0.3"
+urlencoding = "2"
 
 [dev-dependencies]
 tempfile = "3"

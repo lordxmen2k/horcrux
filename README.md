@@ -55,22 +55,22 @@ Chat with your agent from anywhere:
 
 ### Download Pre-built Binary
 
-Get the latest release from [GitHub Releases](https://github.com/yourusername/horcrux/releases):
+Get the latest release from [GitHub Releases](https://github.com/lordxmen2k/horcrux/releases):
 
 ```bash
 # Windows
-wget https://github.com/yourusername/horcrux/releases/latest/download/horcrux-windows-x64.exe
+wget https://github.com/lordxmen2k/horcrux/releases/latest/download/horcrux-windows-x64.exe
 
 # Linux
-wget https://github.com/yourusername/horcrux/releases/latest/download/horcrux-linux-x64
+wget https://github.com/lordxmen2k/horcrux/releases/latest/download/horcrux-linux-x64
 chmod +x horcrux-linux-x64
 
 # macOS (Intel)
-wget https://github.com/yourusername/horcrux/releases/latest/download/horcrux-macos-x64
+wget https://github.com/lordxmen2k/horcrux/releases/latest/download/horcrux-macos-x64
 chmod +x horcrux-macos-x64
 
 # macOS (Apple Silicon)
-wget https://github.com/yourusername/horcrux/releases/latest/download/horcrux-macos-arm64
+wget https://github.com/lordxmen2k/horcrux/releases/latest/download/horcrux-macos-arm64
 chmod +x horcrux-macos-arm64
 ```
 
@@ -78,7 +78,7 @@ chmod +x horcrux-macos-arm64
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/horcrux.git
+git clone https://github.com/lordxmen2k/horcrux.git
 cd horcrux
 
 # Build release binary (requires Rust)
@@ -432,9 +432,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**[⬇ Download Latest Release](https://github.com/yourusername/horcrux/releases)** | 
+**[⬇ Download Latest Release](https://github.com/lordxmen2k/horcrux/releases)** | 
 **[📖 Documentation](SETUP.md)** | 
-**[🐛 Report Bug](https://github.com/yourusername/horcrux/issues)** | 
-**[💬 Discussions](https://github.com/yourusername/horcrux/discussions)**
+**[🐛 Report Bug](https://github.com/lordxmen2k/horcrux/issues)** | 
+**[💬 Discussions](https://github.com/lordxmen2k/horcrux/discussions)**
 
 **Made with 🦀 in Rust** — *Fast, private, yours.*
