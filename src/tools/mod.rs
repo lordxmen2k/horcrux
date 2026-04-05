@@ -13,6 +13,7 @@ pub mod image_search;
 pub mod search;
 pub mod shell;
 pub mod skills;
+pub mod web_search;
 pub mod skills_library;
 pub mod telegram;
 
@@ -22,6 +23,7 @@ pub use http::HttpTool;
 pub use image_search::ImageSearchTool;
 pub use search::SearchTool;
 pub use shell::ShellTool;
+pub use web_search::WebSearchTool;
 pub use skills::{CreateSkillTool, ListSkillsTool, Skill, SkillImplementation, SkillManager, SkillTool};
 pub use skills_library::{find_similar_skill, get_builtin_skills};
 pub use telegram::{TelegramTool, TelegramAgentBot};
@@ -121,16 +123,33 @@ impl ToolRegistry {
         // Register filesystem tool
         registry.register(Arc::new(FileSystemTool::new()));
         
-        // Register shell tool
-        registry.register(Arc::new(ShellTool::new()));
+        // Register web search tool for current information
+        registry.register(Arc::new(WebSearchTool::new()));
         
-        // Register HTTP tool
+        // NOTE: Shell and HTTP tools removed - model was using them incorrectly
+        // instead of the proper web_search tool for product research
+        
+        // Register config manager (for setup/config, not general use)
         registry.register(Arc::new(ConfigManagerTool::new()));
-        registry.register(Arc::new(HttpTool::new()));
-        registry.register(Arc::new(ImageSearchTool::new()));
+        // Register image search tool (may fail if config can't be loaded, which is ok)
+        if let Ok(img_tool) = ImageSearchTool::new() {
+            registry.register(Arc::new(img_tool));
+        }
         
         // Register Telegram tool
         registry.register(Arc::new(TelegramTool::new()));
+        
+        // Register Skills tools (create_skill, list_skills, etc.)
+        // Try project directory first, then fall back to data dir
+        let skills_dir = if std::path::Path::new("skills").exists() {
+            std::path::PathBuf::from("skills")
+        } else {
+            dirs::data_dir()
+                .unwrap_or_else(|| std::env::current_dir().unwrap())
+                .join("horcrux/skills")
+        };
+        registry.register(Arc::new(CreateSkillTool::new(skills_dir)));
+        // ListSkillsTool removed - skills already injected into system prompt
         
         registry
     }

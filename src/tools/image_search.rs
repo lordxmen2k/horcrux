@@ -1,10 +1,6 @@
-//! Image Search Tool - Smart image finding with free sources first
+//! Image Search Tool - Find and download images from Pixabay or Unsplash
 //!
-//! Strategy:
-//! 1. Try free sources first (no API key needed)
-//! 2. If user has paid API keys, use those
-//! 3. Guide user to get keys if needed
-//! 4. Platform-aware output (direct image for Telegram, URL for CLI)
+//! Returns actual image data that can be sent directly to platforms
 
 use super::{Tool, ToolResult};
 use async_trait::async_trait;
@@ -12,205 +8,190 @@ use serde_json::Value;
 
 pub struct ImageSearchTool {
     client: reqwest::Client,
+    config: crate::config::ImageConfig,
 }
 
-impl ImageSearchTool {
-    pub fn new() -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .user_agent("Horcrux-Agent/1.0")
-            .build()
-            .expect("Failed to build HTTP client");
-        Self { client }
-    }
-
-    /// FREE SOURCE 1: Picsum Photos (completely free, no API key)
-    async fn get_picsum_images(&self, query: &str, count: usize) -> Vec<ImageResult> {
-        let mut results = Vec::new();
-        
-        // Picsum doesn't have search, but we can use seeds for consistency
-        // Generate different seeds from the query
-        let seeds: Vec<u64> = (1..=count as u64)
-            .map(|i| {
-                let mut hash = 0u64;
-                for (j, byte) in query.bytes().enumerate() {
-                    hash = hash.wrapping_add((byte as u64).wrapping_mul(i).wrapping_add(j as u64));
-                }
-                hash
-            })
-            .collect();
-        
-        for (i, seed) in seeds.iter().enumerate() {
-            // Different sizes for variety
-            let (width, height) = match i % 3 {
-                0 => (800, 600),
-                1 => (1200, 800),
-                _ => (600, 600),
-            };
-            
-            results.push(ImageResult {
-                id: format!("picsum-{}", seed),
-                url: format!("https://picsum.photos/seed/{}/{}/{}", seed, width, height),
-                thumbnail: format!("https://picsum.photos/seed/{}/200/150", seed),
-                title: format!("Random image {} for '{}'", i + 1, query),
-                source: "Picsum Photos (Free)".to_string(),
-                author: "Random from Picsum".to_string(),
-                source_url: format!("https://picsum.photos/seed/{}", seed),
-            });
-        }
-        
-        results
-    }
-
-    /// FREE SOURCE 2: Wikimedia Commons (Creative Commons images)
-    async fn search_wikimedia(&self, query: &str, count: usize) -> anyhow::Result<Vec<ImageResult>> {
-        let search_url = format!(
-            "https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch={}&srnamespace=6&srlimit={}&format=json&origin=*",
-            urlencoding::encode(query),
-            count
-        );
-
-        let response = match self.client.get(&search_url).send().await {
-            Ok(r) => r,
-            Err(_) => return Ok(Vec::new()),
-        };
-
-        let body = match response.text().await {
-            Ok(t) => t,
-            Err(_) => return Ok(Vec::new()),
-        };
-
-        let json: Value = match serde_json::from_str(&body) {
-            Ok(v) => v,
-            Err(_) => return Ok(Vec::new()),
-        };
-
-        let mut results = Vec::new();
-        
-        if let Some(search_results) = json["query"]["search"].as_array() {
-            for item in search_results.iter().take(count) {
-                if let Some(title) = item["title"].as_str() {
-                    // Extract filename from "File:Example.jpg"
-                    let filename = title.strip_prefix("File:").unwrap_or(title);
-                    let encoded = urlencoding::encode(filename);
-                    
-                    results.push(ImageResult {
-                        id: filename.to_string(),
-                        url: format!("https://commons.wikimedia.org/wiki/Special:FilePath/{}", encoded),
-                        thumbnail: format!("https://commons.wikimedia.org/wiki/Special:FilePath/{}?width=300", encoded),
-                        title: item["snippet"].as_str().map(|s| s.replace("<span class='searchmatch'>", "").replace("</span>", "")).unwrap_or_else(|| filename.to_string()),
-                        source: "Wikimedia Commons (Free/Creative Commons)".to_string(),
-                        author: "See image page for attribution".to_string(),
-                        source_url: format!("https://commons.wikimedia.org/wiki/File:{}", encoded),
-                    });
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// FREE SOURCE 3: Direct search URLs (Google Images, Bing, etc.)
-    fn get_search_links(&self, query: &str) -> String {
-        format!(
-            "Free image search links (open in browser to download):\n\
-             - Google Images: https://www.google.com/search?tbm=isch&q={}\n\
-             - Bing Images: https://www.bing.com/images/search?q={}\n\
-             - DuckDuckGo: https://duckduckgo.com/?iax=images&ia=images&q={}\n\
-             - Wikimedia Commons: https://commons.wikimedia.org/w/index.php?search={}&title=Special:MediaSearch&type=image",
-            urlencoding::encode(query),
-            urlencoding::encode(query),
-            urlencoding::encode(query),
-            urlencoding::encode(query)
-        )
-    }
-
-    /// PAID SOURCE: Unsplash (requires API key)
-    async fn search_unsplash(&self, query: &str, count: usize) -> anyhow::Result<Vec<ImageResult>> {
-        let api_key = std::env::var("UNSPLASH_ACCESS_KEY")
-            .map_err(|_| anyhow::anyhow!("UNSPLASH_ACCESS_KEY not set"))?;
-
-        let url = format!(
-            "https://api.unsplash.com/search/photos?query={}&per_page={}&client_id={}",
-            urlencoding::encode(query),
-            count,
-            api_key
-        );
-
-        let response = self.client.get(&url).send().await?;
-        let body = response.text().await?;
-        let json: Value = serde_json::from_str(&body)?;
-
-        let mut results = Vec::new();
-        
-        if let Some(photos) = json["results"].as_array() {
-            for photo in photos.iter().take(count) {
-                results.push(ImageResult {
-                    id: photo["id"].as_str().unwrap_or("unknown").to_string(),
-                    url: photo["urls"]["regular"].as_str().unwrap_or("").to_string(),
-                    thumbnail: photo["urls"]["small"].as_str().unwrap_or("").to_string(),
-                    title: photo["alt_description"].as_str()
-                        .or_else(|| photo["description"].as_str())
-                        .unwrap_or("Image")
-                        .to_string(),
-                    source: "Unsplash".to_string(),
-                    author: photo["user"]["name"].as_str().unwrap_or("Unknown").to_string(),
-                    source_url: photo["links"]["html"].as_str().unwrap_or("").to_string(),
-                });
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Format results based on platform
-    fn format_results(&self, images: &[ImageResult], search_links: &str, platform: &str) -> String {
-        match platform {
-            "telegram" => {
-                // For Telegram, return direct image URLs that can be sent
-                let mut output = format!("🖼️ Found {} images:\n\n", images.len());
-                for (i, img) in images.iter().enumerate() {
-                    output.push_str(&format!(
-                        "{}. {}\n   📥 {}\n   🔗 {}\n\n",
-                        i + 1,
-                        img.title,
-                        img.url,
-                        img.source_url
-                    ));
-                }
-                output.push_str("\n💡 I can send these directly to the chat!");
-                output
-            }
-            _ => {
-                // Default format for CLI/Web
-                let mut output = format!("🖼️ Found {} images:\n\n", images.len());
-                for (i, img) in images.iter().enumerate() {
-                    output.push_str(&format!(
-                        "{}. {}\n   Source: {}\n   By: {}\n   📥 Direct URL: {}\n   🔗 Source: {}\n\n",
-                        i + 1,
-                        img.title,
-                        img.source,
-                        img.author,
-                        img.url,
-                        img.source_url
-                    ));
-                }
-                output.push_str(&format!("\n{}\n", search_links));
-                output
-            }
-        }
-    }
-}
-
+/// Image search result
 #[derive(Debug, Clone)]
 struct ImageResult {
     id: String,
     url: String,
-    thumbnail: String,
+    local_path: String,
     title: String,
     source: String,
-    author: String,
-    source_url: String,
+}
+
+impl ImageSearchTool {
+    pub fn new() -> anyhow::Result<Self> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent("HorcruxAgent/1.0 (image search bot)")
+            .build()
+            .expect("Failed to build HTTP client");
+            
+        let config = crate::config::Config::load()
+            .map(|c| c.images)
+            .unwrap_or_default();
+            
+        Ok(Self { client, config })
+    }
+    
+    /// Download image from URL and save to temp file
+    /// Validates that the content is actually an image, not an error page
+    async fn download_image(&self, url: &str, filename: &str) -> anyhow::Result<String> {
+        let response = self.client
+            .get(url)
+            .header("Accept", "image/jpeg,image/png,image/gif,image/webp,image/*")
+            .send()
+            .await?;
+        
+        // Check HTTP status
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
+        }
+        
+        let bytes = response.bytes().await?;
+        
+        // Validate: must be reasonable size (> 10KB to avoid tiny/error pages)
+        if bytes.len() < 10_000 {
+            if bytes.starts_with(b"<!DOCTYPE") || bytes.starts_with(b"<html") {
+                return Err(anyhow::anyhow!("Downloaded HTML error page instead of image"));
+            }
+            return Err(anyhow::anyhow!("Downloaded content too small ({} bytes)", bytes.len()));
+        }
+        
+        // Check for image magic bytes
+        let is_valid_image = match bytes.get(0..4) {
+            Some(b"\xFF\xD8\xFF\xE0") => true, // JPEG
+            Some(b"\xFF\xD8\xFF\xE1") => true, // JPEG EXIF
+            Some(b"\x89PNG")          => true, // PNG
+            Some(b"GIF8")             => true, // GIF
+            Some(b"RIFF")             => true, // WebP
+            _ => false,
+        };
+        
+        if !is_valid_image {
+            let is_webp = bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP");
+            if !is_webp {
+                return Err(anyhow::anyhow!("Downloaded content is not a valid image"));
+            }
+        }
+        
+        // Save to temp directory
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join(filename);
+        tokio::fs::write(&path, &bytes).await?;
+        
+        Ok(path.to_string_lossy().to_string())
+    }
+    
+    /// Search Unsplash for images
+    async fn search_unsplash(&self, query: &str, api_key: &str, count: usize) -> anyhow::Result<Vec<ImageResult>> {
+        let url = format!(
+            "https://api.unsplash.com/search/photos?query={}&per_page={}",
+            urlencoding::encode(query),
+            count.min(10)
+        );
+        
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Client-ID {}", api_key))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Unsplash API error: {} - {}", status, text));
+        }
+        
+        let json: Value = response.json().await?;
+        let mut results = Vec::new();
+        
+        if let Some(photos) = json["results"].as_array() {
+            for (i, photo) in photos.iter().enumerate() {
+                if let Some(img_url) = photo["urls"]["regular"].as_str() {
+                    // Add delay between downloads
+                    if i > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                    }
+                    
+                    match self.download_image(img_url, &format!("horcrux_img_{}.jpg", i)).await {
+                        Ok(path) => {
+                            results.push(ImageResult {
+                                id: photo["id"].as_str().unwrap_or("unknown").to_string(),
+                                url: img_url.to_string(),
+                                local_path: path,
+                                title: photo["alt_description"]
+                                    .as_str()
+                                    .or_else(|| photo["description"].as_str())
+                                    .unwrap_or("Image")
+                                    .to_string(),
+                                source: "Unsplash".to_string(),
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to download Unsplash image {}: {}", i, e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(results)
+    }
+    
+    /// Search Pixabay for images
+    async fn search_pixabay(&self, query: &str, api_key: &str, count: usize) -> anyhow::Result<Vec<ImageResult>> {
+        let url = format!(
+            "https://pixabay.com/api/?key={}&q={}&image_type=photo&per_page={}&safesearch=true",
+            api_key,
+            urlencoding::encode(query),
+            count.min(20)
+        );
+        
+        let response = self.client
+            .get(&url)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Pixabay API error: {} - {}", status, text));
+        }
+        
+        let json: Value = response.json().await?;
+        let mut results = Vec::new();
+        
+        if let Some(hits) = json["hits"].as_array() {
+            for (i, hit) in hits.iter().enumerate() {
+                if let Some(img_url) = hit["webformatURL"].as_str() {
+                    // Add delay between downloads
+                    if i > 0 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                    }
+                    
+                    match self.download_image(img_url, &format!("horcrux_img_{}.jpg", i)).await {
+                        Ok(path) => {
+                            results.push(ImageResult {
+                                id: hit["id"].as_i64().map(|i| i.to_string()).unwrap_or_else(|| i.to_string()),
+                                url: img_url.to_string(),
+                                local_path: path,
+                                title: hit["tags"].as_str().unwrap_or("Image").to_string(),
+                                source: "Pixabay".to_string(),
+                            });
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to download Pixabay image {}: {}", i, e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(results)
+    }
 }
 
 #[async_trait]
@@ -220,15 +201,8 @@ impl Tool for ImageSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search for images on the internet. Uses FREE sources first (no API key needed):\n\
-         1. Picsum Photos - Random images, completely free\n\
-         2. Wikimedia Commons - Creative Commons images\n\
-         3. Search links to Google/Bing/DuckDuckGo\n\
-         \n\
-         If you have API keys, can also use:\n\
-         - Unsplash (free tier: 50/hour)\n\
-         \n\
-         Platform-aware: On Telegram, images can be sent directly."
+        "Search and download images from Unsplash or Pixabay. \
+         Returns ready-to-send image files with [IMAGE_X] file=... tags."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -237,20 +211,14 @@ impl Tool for ImageSearchTool {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "What to search for (e.g., 'golden retriever', 'mountain sunset')"
+                    "description": "What image to search for (e.g., 'golden retriever', 'sunset beach')"
                 },
                 "count": {
                     "type": "integer",
-                    "description": "Number of images (1-10, default: 3)",
+                    "description": "Number of images (1-5, default: 3)",
                     "default": 3,
                     "minimum": 1,
-                    "maximum": 10
-                },
-                "platform": {
-                    "type": "string",
-                    "enum": ["cli", "telegram", "web", "auto"],
-                    "description": "Output format for platform",
-                    "default": "auto"
+                    "maximum": 5
                 }
             },
             "required": ["query"]
@@ -258,76 +226,75 @@ impl Tool for ImageSearchTool {
     }
 
     async fn execute(&self, args: Value) -> anyhow::Result<ToolResult> {
+        // Check if image search is configured
+        if !self.config.is_configured() {
+            return Ok(ToolResult::success(
+                "Image search is not configured.\n\n\
+                Please add an image provider API key to your config:\n\
+                1. Edit ~/.horcrux/config.toml\n\
+                2. Add:\n\n\
+                [images]\n\
+                provider = \"unsplash\"  # or \"pixabay\"\n\
+                api_key = \"your_api_key_here\"\n\n\
+                Get a free API key:\n\
+                - Unsplash: https://unsplash.com/developers (50 req/hour)\n\
+                - Pixabay: https://pixabay.com/api/docs (100 req/minute)".to_string()
+            ));
+        }
+        
         let query = args["query"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing required parameter: query"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing query parameter"))?;
         
-        let count = args["count"].as_u64().unwrap_or(3).min(10) as usize;
-        let platform = args["platform"].as_str().unwrap_or("auto");
-
-        // Try free sources first
-        let mut all_images = Vec::new();
-        let mut sources_used = Vec::new();
-
-        // 1. Try Wikimedia Commons
-        match self.search_wikimedia(query, count).await {
-            Ok(mut images) => {
-                if !images.is_empty() {
-                    sources_used.push("Wikimedia Commons");
-                    all_images.append(&mut images);
-                }
-            }
-            Err(_) => {}
-        }
-
-        // 2. Add Picsum images for variety (always works)
-        let picsum_count = count.saturating_sub(all_images.len());
-        if picsum_count > 0 {
-            let mut picsum = self.get_picsum_images(query, picsum_count).await;
-            sources_used.push("Picsum Photos");
-            all_images.append(&mut picsum);
-        }
-
-        // 3. Try Unsplash if user has API key
-        if std::env::var("UNSPLASH_ACCESS_KEY").is_ok() {
-            match self.search_unsplash(query, count).await {
-                Ok(mut images) => {
-                    if !images.is_empty() {
-                        sources_used.push("Unsplash");
-                        all_images.append(&mut images);
-                    }
-                }
-                Err(_) => {}
-            }
-        }
-
-        // Format results
-        let search_links = self.get_search_links(query);
-        let output = self.format_results(&all_images, &search_links, platform);
-
-        // Build response
-        let mut response = output;
+        let count = args["count"].as_i64().unwrap_or(3) as usize;
         
-        if !std::env::var("UNSPLASH_ACCESS_KEY").is_ok() {
-            response.push_str("\n\n");
-            response.push_str("💡 **Want better image results?**\n");
-            response.push_str("Get a free Unsplash API key (50 requests/hour):\n");
-            response.push_str("1. Go to https://unsplash.com/developers\n");
-            response.push_str("2. Create an app (free)\n");
-            response.push_str("3. Tell me: 'Set UNSPLASH_ACCESS_KEY to xxx'\n");
-            response.push_str("I'll save it to your .env file!");
+        let api_key = self.config.api_key.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No API key configured"))?;
+        
+        // Search based on provider
+        let provider = self.config.provider();
+        let results = match provider {
+            "unsplash" => self.search_unsplash(query, api_key, count).await?,
+            "pixabay" => self.search_pixabay(query, api_key, count).await?,
+            other => return Ok(ToolResult::error(format!(
+                "Unknown image provider: {}. Use 'unsplash' or 'pixabay'.", other
+            ))),
+        };
+        
+        if results.is_empty() {
+            return Ok(ToolResult::error(
+                "No images found. Try a different search query.".to_string()
+            ));
         }
-
-        Ok(ToolResult::success(response))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_image_search_tool() {
-        let tool = ImageSearchTool::new();
-        assert_eq!(tool.name(), "image_search");
+        
+        // Format results with [IMAGE_X] tags for Telegram
+        // Verify each file exists before including it
+        let mut output = format!("Found {} image(s) for '{}':\n\n", results.len(), query);
+        
+        for (i, img) in results.iter().enumerate() {
+            let path = std::path::Path::new(&img.local_path);
+            if !path.exists() {
+                println!("⚠️ Image file not found at: {}", img.local_path);
+                continue;
+            }
+            
+            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            println!("✅ Image {} saved at: {} ({} bytes)", i + 1, img.local_path, size);
+            
+            output.push_str(&format!(
+                "[IMAGE_{}] file=\"{}\"\n",
+                i + 1,
+                img.local_path,
+            ));
+        }
+        
+        if output.trim() == format!("Found {} image(s) for '{}':", results.len(), query) {
+            return Ok(ToolResult::error(
+                "Images were downloaded but could not be located. Please try again.".to_string()
+            ));
+        }
+        
+        output.push_str("\n⚠️ IMPORTANT: Copy the [IMAGE_N] file=... lines above EXACTLY into your response. Do NOT modify the paths.\n");
+        
+        Ok(ToolResult::success(output))
     }
 }

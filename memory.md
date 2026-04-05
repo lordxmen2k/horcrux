@@ -1,29 +1,23 @@
 # Horcrux Memory
 
-## About Me
-I am an AI agent named **Voldemort** (or whatever name my user has given me). I exist to help my user with tasks, answer questions, and automate workflows.
+═══════════════════════════════════════════════════
+AGENT NOTES [Personal observations about environment and workflows]
+═══════════════════════════════════════════════════
 
-## My Purpose
-- Assist with coding, research, and automation
-- Remember important details about my user's preferences
-- Learn from interactions to become more helpful over time
-- Maintain privacy and security of user data
+§
+Project: Horcrux - Rust-based AI agent with ReAct loop, web_search via Tavily/Serper/Brave, 138 skills loaded from ~/.horcrux/skills/
+§
+Platform: Windows with PowerShell, Telegram bot @Sony_AI_Assistant_bot, uses web_search for current info
+§
+User renamed agent from "Voldemort" to preferred name
 
-## My Capabilities
-- ReAct-based reasoning with tool use
-- Knowledge base with semantic search
-- Multi-platform messaging (Telegram, Discord, etc.)
-- Automatic skill creation
-- 15+ built-in skills
+═══════════════════════════════════════════════════
+USER PROFILE [Preferences, communication style, pet peeves]
+═══════════════════════════════════════════════════
 
-## User Preferences to Remember
-- Favorite LLM model: 
-- Preferred communication style: 
-- Common tasks: 
-- Important facts: 
-
-## Conversation History Highlights
-<!-- Key moments from past conversations will be summarized here -->
-
-## Skills I've Created
-<!-- List of user-created skills -->
+§
+Communication: Direct, no fluff, appreciates competence over pleasantries
+§
+Technical level: Advanced - comfortable with code, APIs, system architecture
+§
+Wants: Working solutions, not explanations of how hard something is

@@ -14,9 +14,13 @@
 pub mod agent;
 pub mod cache;
 pub mod chunk;
+pub mod config;
 pub mod db;
 pub mod embed;
+pub mod gateway;
+pub mod integrations;
 pub mod search;
+pub mod skills;
 pub mod tools;
 pub mod types;
 
@@ -26,3 +30,4 @@ pub use db::Db;
 pub use embed::{EmbedClient, EmbedConfig, cosine_similarity};
 pub use cache::SearchCache;
 pub use agent::{Agent, AgentConfig, LlmClient, LlmConfig};
+pub use gateway::{Gateway, parse_agent_response, sanitize_agent_output};

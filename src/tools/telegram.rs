@@ -12,7 +12,83 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use teloxide::prelude::*;
+use teloxide::types::InputFile;
 use tokio::sync::mpsc;
+use std::collections::HashMap;
+
+/// Sanitize agent output to remove internal tool call JSON
+/// This prevents raw tool calls from leaking to users
+fn sanitize_for_user(text: &str) -> String {
+    use regex::Regex;
+    
+    let mut result = text.to_string();
+    
+    // Remove JSON tool call blocks like {"name": "tool_name", "arguments": {...}}
+    if let Ok(re) = Regex::new(r#"\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}"#) {
+        result = re.replace_all(&result, "").to_string();
+    }
+    
+    // Remove XML tool call tags
+    if let Ok(re) = Regex::new(r#"<tool_call>.*?</tool_call>"#) {
+        result = re.replace_all(&result, "").to_string();
+    }
+    
+    // Remove any remaining standalone JSON objects that look like tool calls
+    if let Ok(re) = Regex::new(r#"\{[^{}]*"name"[^{}]*\}"#) {
+        result = re.replace_all(&result, "").to_string();
+    }
+    
+    // Clean up extra whitespace and empty lines
+    result
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+use crate::gateway::{Gateway, parse_agent_response, sanitize_agent_output, split_message};
+
+/// Telegram implementation of the Gateway trait
+pub struct TelegramGateway {
+    bot: Bot,
+    chat_id: ChatId,
+}
+
+#[async_trait]
+impl Gateway for TelegramGateway {
+    async fn send_text(&self, _chat_id: &str, text: &str) -> anyhow::Result<()> {
+        // Telegram limit: 4096 chars
+        for chunk in split_message(text, 4000) {
+            self.bot.send_message(self.chat_id, &chunk).await?;
+            // Small delay to avoid flood control
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        Ok(())
+    }
+
+    async fn send_image(&self, _chat_id: &str, file_path: &str) -> anyhow::Result<()> {
+        self.bot.send_photo(
+            self.chat_id,
+            InputFile::file(file_path)
+        ).await?;
+        Ok(())
+    }
+}
+
+/// Send agent response to Telegram, handling both text and images
+/// This function uses the Gateway trait implementation
+pub async fn send_agent_response(
+    bot: &Bot,
+    chat_id: ChatId,
+    response: &str,
+) -> anyhow::Result<()> {
+    let gateway = TelegramGateway { 
+        bot: bot.clone(), 
+        chat_id 
+    };
+    gateway.send_response(&chat_id.0.to_string(), response).await
+}
 
 /// Message from Telegram user
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,6 +325,7 @@ impl Tool for TelegramTool {
 /// Skill for creating a persistent Telegram bot that processes messages through the agent
 pub struct TelegramAgentBot {
     agent_config: crate::agent::AgentConfig,
+    agents: Arc<Mutex<HashMap<i64, crate::agent::Agent>>>,
 }
 
 impl TelegramAgentBot {
@@ -256,6 +333,7 @@ impl TelegramAgentBot {
         let config = crate::agent::AgentConfig::new(db_path);
         Self {
             agent_config: config,
+            agents: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -271,11 +349,13 @@ impl TelegramAgentBot {
         println!("Waiting for messages...\n");
 
         let db_path = self.agent_config.db_path.clone();
+        let agents = self.agents.clone();
 
         let handler = dptree::entry()
             .branch(Update::filter_message().endpoint(
                 move |bot: Bot, msg: Message| {
                     let db_path = db_path.clone();
+                    let agents = agents.clone();
                     
                     async move {
                         if let Some(text) = msg.text() {
@@ -283,43 +363,77 @@ impl TelegramAgentBot {
                                 .unwrap_or_else(|| "Unknown".to_string());
                             println!("📩 Message from {}: {}", username, text);
 
-                            // Send typing indicator immediately
                             let chat_id = msg.chat.id;
+                            
+                            // Send status message that will be deleted later
+                            let status_msg = match bot.send_message(
+                                chat_id, 
+                                "🤔 Thinking..."
+                            ).await {
+                                Ok(msg) => Some(msg.id),
+                                Err(_) => None,
+                            };
+                            
+                            // Send typing indicator to show "typing..." under bot name
                             let _ = bot.send_chat_action(chat_id, teloxide::types::ChatAction::Typing).await;
                             
-                            // Create agent and process message
-                            let config = crate::agent::AgentConfig::new(db_path);
-                            match crate::agent::Agent::new(config) {
-                                Ok(mut agent) => {
-                                    // Periodically refresh typing indicator every 4 seconds
-                                    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(4));
-                                    let response = tokio::select! {
-                                        result = agent.run(text) => result,
-                                        _ = interval.tick() => {
-                                            let _ = bot.send_chat_action(chat_id, teloxide::types::ChatAction::Typing).await;
-                                            agent.run(text).await
-                                        }
-                                    };
+                            // Get or create agent for this chat (persistent memory per chat)
+                            let mut agents_lock = agents.lock().await;
+                            let agent = agents_lock.entry(chat_id.0).or_insert_with(|| {
+                                let config = crate::agent::AgentConfig::new(db_path.clone());
+                                crate::agent::Agent::new(config).expect("Failed to create agent")
+                            });
+                            
+                            // Spawn a task to keep sending typing indicator every 3 seconds
+                            let typing_bot = bot.clone();
+                            let typing_chat_id = chat_id;
+                            let typing_handle = tokio::spawn(async move {
+                                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
+                                loop {
+                                    interval.tick().await;
+                                    let _ = typing_bot.send_chat_action(
+                                        typing_chat_id, 
+                                        teloxide::types::ChatAction::Typing
+                                    ).await;
+                                }
+                            });
+                            
+                            // Run the agent
+                            let response = agent.run(text).await;
+                            
+                            // Stop the typing indicator task
+                            typing_handle.abort();
+                            drop(agents_lock); // Release lock before async operations
+                            
+                            // Delete status message before sending response
+                            if let Some(status_id) = status_msg {
+                                let _ = bot.delete_message(chat_id, status_id).await;
+                            }
+                            
+                            match response {
+                                Ok(response_text) => {
+                                    println!("📝 Raw agent response ({} chars): {:?}", response_text.len(), &response_text[..response_text.len().min(200)]);
                                     
-                                    match response {
-                                        Ok(response_text) => {
-                                            // Send response back
-                                            if let Err(e) = bot.send_message(chat_id, &response_text).await {
-                                                eprintln!("❌ Failed to send message: {}", e);
-                                            }
-                                        }
-                                        Err(e) => {
-                                            let _ = bot.send_message(
-                                                chat_id, 
-                                                format!("❌ Error: {}", e)
-                                            ).await;
-                                        }
+                                    // Sanitize to remove any leaked tool call JSON
+                                    let response_text = sanitize_for_user(&response_text);
+                                    println!("📝 Sanitized response ({} chars)", response_text.len());
+                                    
+                                    // Skip empty responses
+                                    if response_text.trim().is_empty() {
+                                        eprintln!("❌ Empty response after sanitization!");
+                                        let _ = bot.send_message(chat_id, "🤔 I processed your request but didn't generate a response. Please try again.").await;
+                                        return Ok(());
+                                    }
+                                    
+                                    // Send response with images using the shared function
+                                    if let Err(e) = send_agent_response(&bot, chat_id, &response_text).await {
+                                        eprintln!("❌ Failed to send response: {}", e);
                                     }
                                 }
                                 Err(e) => {
                                     let _ = bot.send_message(
-                                        chat_id,
-                                        format!("❌ Failed to initialize agent: {}", e)
+                                        chat_id, 
+                                        format!("❌ Error: {}", e)
                                     ).await;
                                 }
                             }

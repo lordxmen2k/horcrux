@@ -63,6 +63,22 @@ impl Tool for SearchTool {
         let query = args["query"].as_str()
             .ok_or_else(|| anyhow::anyhow!("Missing required parameter: query"))?;
         
+        // Guard: Detect product/purchase queries that need current data
+        let query_lower = query.to_lowercase();
+        let needs_current_data = ["best", "2024", "2025", "2026", "latest", 
+                                   "buy", "purchase", "price", "review", "recommend",
+                                   "laptop", "computer", "phone", "product"]
+            .iter()
+            .any(|w| query_lower.contains(w));
+        
+        if needs_current_data {
+            return Ok(ToolResult::error(format!(
+                "search_knowledge only has old cached documents and cannot answer '{}' with current data. \
+                 Use web_search tool instead to get up-to-date information from the internet.",
+                query
+            )));
+        }
+        
         let limit = args["limit"].as_u64().unwrap_or(5) as usize;
         let collection = args["collection"].as_str().map(|s| s.to_string());
 

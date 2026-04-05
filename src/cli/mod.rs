@@ -100,7 +100,10 @@ pub enum Commands {
     
     /// Interactive setup wizard for configuration
     #[command(alias = "configure")]
-    Setup,
+    Setup {
+        /// Specific section to configure (llm, images, telegram, show)
+        section: Option<String>,
+    },
 }
 
 impl Cli {

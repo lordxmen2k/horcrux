@@ -59,7 +59,13 @@ pub struct SkillManager {
 
 impl SkillManager {
     pub fn new(skills_dir: PathBuf) -> Self {
-        std::fs::create_dir_all(&skills_dir).ok();
+        // Ensure skills directory exists
+        if let Err(e) = std::fs::create_dir_all(&skills_dir) {
+            eprintln!("⚠️ Failed to create skills directory {:?}: {}", skills_dir, e);
+        } else {
+            println!("📁 Skills directory: {:?}", skills_dir);
+        }
+        
         let mut manager = Self {
             skills_dir,
             skills: HashMap::new(),
@@ -69,7 +75,14 @@ impl SkillManager {
         manager.load_builtin_skills();
         
         // Then load user skills (which can override built-ins)
-        manager.load_skills().ok();
+        if let Err(e) = manager.load_skills() {
+            eprintln!("⚠️ Failed to load skills: {}", e);
+        } else {
+            let count = manager.skills.len();
+            if count > 0 {
+                println!("📚 Loaded {} skills (built-in + custom)", count);
+            }
+        }
         manager
     }
     
@@ -107,9 +120,10 @@ impl SkillManager {
     /// Save a skill to disk
     fn save_skill(&self, skill: &Skill) -> anyhow::Result<()> {
         let filename = format!("{}.json", sanitize_filename(&skill.name));
-        let path = self.skills_dir.join(filename);
+        let path = self.skills_dir.join(&filename);
         let content = serde_json::to_string_pretty(skill)?;
-        std::fs::write(path, content)?;
+        std::fs::write(&path, &content)?;
+        println!("💾 Skill saved: {:?}", path);
         Ok(())
     }
 
@@ -123,6 +137,47 @@ impl SkillManager {
     /// Get a skill by name
     pub fn get_skill(&self, name: &str) -> Option<&Skill> {
         self.skills.get(name)
+    }
+    
+    /// Find skills by keyword in name or description
+    pub fn find_skills_by_keyword(&self, keyword: &str) -> Vec<&Skill> {
+        let keyword_lower = keyword.to_lowercase();
+        self.skills
+            .values()
+            .filter(|s| {
+                s.name.to_lowercase().contains(&keyword_lower) ||
+                s.description.to_lowercase().contains(&keyword_lower)
+            })
+            .collect()
+    }
+    
+    /// Find the best matching skill for a request type
+    pub fn find_best_skill_for(&self, request_type: &str) -> Option<&Skill> {
+        let request_lower = request_type.to_lowercase();
+        let keywords: Vec<&str> = request_lower.split_whitespace().collect();
+        
+        // Find skills that match most keywords
+        let mut best_match: Option<&Skill> = None;
+        let mut best_score = 0;
+        
+        for skill in self.skills.values() {
+            let skill_text = format!("{} {}", skill.name, skill.description).to_lowercase();
+            let score = keywords.iter()
+                .filter(|k| skill_text.contains(*k))
+                .count();
+            
+            if score > best_score {
+                best_score = score;
+                best_match = Some(skill);
+            }
+        }
+        
+        // Only return if at least one keyword matched
+        if best_score > 0 {
+            best_match
+        } else {
+            None
+        }
     }
 
     /// List all available skills

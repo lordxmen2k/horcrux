@@ -39,7 +39,7 @@ impl LlmConfig {
             temperature: std::env::var("HORCRUX_LLM_TEMPERATURE")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(0.7),
+                .unwrap_or(0.6), // Moonshot K2 requires temperature=0.6
         }
     }
 
@@ -149,6 +149,12 @@ pub struct TokenUsage {
 
 // OpenAI API types
 #[derive(Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Serialize)]
 struct ChatRequest {
     model: String,
     messages: Vec<ChatMessage>,
@@ -160,6 +166,8 @@ struct ChatRequest {
     max_tokens: Option<i32>,
     temperature: f32,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>, // Disable thinking to avoid reasoning_content issues
 }
 
 #[derive(Deserialize)]
@@ -203,10 +211,13 @@ impl LlmClient {
     }
 
     /// Send a chat completion request
+    /// 
+    /// `force_tools`: When Some("required"), forces the model to call at least one tool
     pub async fn chat(
         &self,
         messages: &[ChatMessage],
         tools: Option<&[ToolDefinition]>,
+        force_tools: Option<&str>,
     ) -> Result<LlmResponse> {
         let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
 
@@ -226,28 +237,59 @@ impl LlmClient {
                 .collect::<Vec<_>>()
         });
 
+        // Determine tool_choice: "auto" (default), "none", or "required"
+        let tool_choice = if force_tools == Some("required") && tools.is_some() {
+            Some(serde_json::json!("required"))
+        } else if tools.is_some() {
+            Some(serde_json::json!("auto"))
+        } else {
+            None
+        };
+
         let request = ChatRequest {
             model: self.config.model.clone(),
             messages: messages.to_vec(),
             tools: tools_value,
-            tool_choice: if tools.is_some() { Some(serde_json::json!("auto")) } else { None },
+            tool_choice: tool_choice.clone(),
             max_tokens: self.config.max_tokens,
             temperature: self.config.temperature,
             stream: false,
+            thinking: Some(ThinkingConfig { kind: "disabled".to_string() }), // Disable thinking
         };
+        
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.config.api_key)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| anyhow!("LLM request failed: {}", e))?;
+
+        // Make request with retry logic for 429 rate limiting
+        let mut retries = 0;
+        let max_retries = 3;
+        let response = loop {
+            let resp = self
+                .client
+                .post(&url)
+                .bearer_auth(&self.config.api_key)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| anyhow!("LLM request failed: {}", e))?;
+            
+            if resp.status() == 429 && retries < max_retries {
+                retries += 1;
+                let delay = std::time::Duration::from_secs(retries as u64 * 2); // 2s, 4s, 6s
+                eprintln!("⚠️ Rate limited (429), retrying in {}s... (attempt {}/{})", 
+                    delay.as_secs(), retries, max_retries);
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            
+            break resp;
+        };
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            if status == 429 {
+                return Err(anyhow!("Rate limit exceeded. Please wait a moment and try again."));
+            }
             return Err(anyhow!("LLM API error {}: {}", status, body));
         }
 
@@ -262,10 +304,17 @@ impl LlmClient {
 
         let choice = &chat_response.choices[0];
         let message = &choice.message;
+        
+        let tool_calls = message.tool_calls.clone().unwrap_or_default();
+        if force_tools == Some("required") {
+            eprintln!("🔧 Forced tools: got {} tool_calls, content='{}'", 
+                tool_calls.len(), 
+                message.content.clone().unwrap_or_default().chars().take(50).collect::<String>());
+        }
 
         Ok(LlmResponse {
             content: message.content.clone().unwrap_or_default(),
-            tool_calls: message.tool_calls.clone().unwrap_or_default(),
+            tool_calls,
             finish_reason: choice.finish_reason.clone(),
             usage: chat_response.usage,
         })
@@ -277,7 +326,7 @@ impl LlmClient {
             ChatMessage::system(system_prompt),
             ChatMessage::user(user_message),
         ];
-        let response = self.chat(&messages, None).await?;
+        let response = self.chat(&messages, None, None).await?;
         Ok(response.content)
     }
 

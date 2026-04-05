@@ -63,9 +63,9 @@ async fn main() -> Result<()> {
         }
         
         // Setup wizard
-        Some(Commands::Setup) => {
+        Some(Commands::Setup { section }) => {
             let wizard = cli::setup::SetupWizard::new();
-            wizard.run().await?;
+            wizard.run(section.as_deref()).await?;
         }
     }
 

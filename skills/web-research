@@ -1,0 +1,76 @@
+---
+name: web-research
+description: Research any topic using web search. Finds current information, news, documentation, and resources. Best for staying up-to-date on technology, products, news, and academic topics.
+triggers:
+  - research
+  - find information about
+  - look up
+  - search for
+  - what is
+  - how to
+  - latest news
+  - current
+  - 2026
+  - best
+  - compare
+  - vs
+  - versus
+---
+
+# Web Research Skill
+
+Use web_search tool to find current information on any topic.
+
+## When to Use
+
+- User asks about current events or news
+- Product recommendations and comparisons
+- Technical documentation lookup
+- Academic research
+- "Best of" queries
+- "How to" questions requiring current info
+
+## Procedure
+
+1. **Identify the core query** from user request
+2. **Use web_search tool** with a specific, targeted query
+3. **Synthesize results** into a clear, helpful response
+4. **Cite sources** by mentioning where information came from
+
+## What NOT to Do
+
+❌ NEVER use search_knowledge for current topics - it only has old cached data
+❌ NEVER guess or hallucinate information - always search
+❌ NEVER say "I don't have access to current information" - you have web_search!
+
+## Example Queries
+
+| User Request | Search Query |
+|--------------|--------------|
+| "What's the latest on AI?" | latest AI news 2026 |
+| "Best laptop for programming" | best laptop programming 2026 reviews |
+| "How does Rust async work?" | Rust async await tutorial documentation |
+| "iPhone 16 vs Samsung S25" | iPhone 16 vs Samsung Galaxy S25 comparison |
+| "Current Bitcoin price" | Bitcoin price today |
+
+## Response Format
+
+```
+Based on my research, here's what I found:
+
+[Summary of findings]
+
+Key points:
+1. [Point with source]
+2. [Point with source]
+3. [Point with source]
+
+Sources: [List URLs or domains]
+```
+
+## Important Notes
+
+- Always include year (2026) for product comparisons
+- Use specific model numbers when comparing products
+- Check publication dates for news recency
+- For technical docs, prefer official sources

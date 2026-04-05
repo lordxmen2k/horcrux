@@ -1,0 +1,65 @@
+---
+name: news-tracker
+description: Get latest news on any topic - technology, business, science, entertainment, sports, politics. Uses web search to find current headlines and stories.
+triggers:
+  - news
+  - headlines
+  - what's happening
+  - latest on
+  - breaking news
+  - recent developments
+  - update on
+  - current events
+---
+
+# News Tracker Skill
+
+Get the latest news and headlines on any topic using web search.
+
+## When to Use
+
+- User asks "What's the news?"
+- Breaking stories
+- Industry updates
+- Technology announcements
+- Current events
+
+## Procedure
+
+1. **Identify topic** (general news or specific subject)
+2. **Search with news-specific query** including "news" and date
+3. **Extract headlines and summaries** from results
+4. **Present in digest format**
+
+## Search Patterns
+
+| Topic | Query Pattern |
+|-------|---------------|
+| General tech news | technology news today |
+| Specific company | [Company] news 2026 |
+| Industry | [Industry] latest news |
+| Breaking | breaking news [topic] |
+| World events | world news today |
+
+## Response Format
+
+```
+📰 Latest News: [Topic]
+
+1. **[Headline]**
+   [Brief summary]
+   Source: [URL/domain]
+
+2. **[Headline]**
+   [Brief summary]
+   Source: [URL/domain]
+
+[Additional context if relevant]
+```
+
+## Important
+
+- Always search - never use cached knowledge for news
+- Include "today" or "2026" in queries for recency
+- Present multiple sources when possible
+- Note if news is developing or confirmed

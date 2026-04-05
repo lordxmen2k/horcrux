@@ -284,7 +284,13 @@ impl SetupWizard {
         Self
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(&self, section: Option<&str>) -> Result<()> {
+        // Handle quick section-specific setup
+        if let Some(sec) = section {
+            return self.run_section_setup(sec).await;
+        }
+        
+        // Full setup wizard
         println!("\n🧙 Horcrux Setup Wizard\n");
         println!("Let's configure your AI agent with all the bells and whistles!\n");
 
@@ -306,6 +312,168 @@ impl SetupWizard {
         // Save all configurations
         self.save_complete_config(model_config, personality_config, integrations_config, server_config, advanced_config).await?;
         
+        Ok(())
+    }
+    
+    /// Run section-specific quick setup
+    async fn run_section_setup(&self, section: &str) -> Result<()> {
+        use horcrux::config::Config;
+        
+        match section {
+            "llm" => self.quick_setup_llm().await,
+            "images" => self.quick_setup_images().await,
+            "telegram" => self.quick_setup_telegram().await,
+            "show" => {
+                let config = Config::load().unwrap_or_default();
+                println!("\n📋 Current Configuration\n");
+                println!("[llm]");
+                println!("  provider = {}", config.llm.provider.as_deref().unwrap_or("not set"));
+                println!("  model    = {}", config.llm.model.as_deref().unwrap_or("not set"));
+                println!("  api_key  = {}", mask_key(config.llm.api_key.as_deref().unwrap_or("")));
+                println!("\n[images]");
+                println!("  provider = {}", config.images.provider.as_deref().unwrap_or("not set"));
+                println!("  api_key  = {}", mask_key(config.images.api_key.as_deref().unwrap_or("")));
+                println!("\n[telegram]");
+                println!("  bot_token = {}", mask_key(config.telegram.bot_token.as_deref().unwrap_or("")));
+                println!();
+                Ok(())
+            }
+            _ => {
+                println!("Unknown section '{}'. Try: llm, images, telegram, show", section);
+                Ok(())
+            }
+        }
+    }
+    
+    /// Quick LLM setup using config.toml
+    async fn quick_setup_llm(&self) -> Result<()> {
+        use horcrux::config::Config;
+        let mut config = Config::load().unwrap_or_default();
+        
+        println!("\n🤖 Quick LLM Setup\n");
+        
+        // Provider
+        println!("Select provider:");
+        println!("  1. Moonshot (Kimi)");
+        println!("  2. OpenAI");
+        println!("  3. Anthropic");
+        println!("  4. Ollama (local)");
+        
+        let current = config.llm.provider.as_deref().unwrap_or("");
+        print!("Choice (current: {}): ", current);
+        std::io::stdout().flush()?;
+        let mut choice = String::new();
+        std::io::stdin().read_line(&mut choice)?;
+        
+        if !choice.trim().is_empty() {
+            config.llm.provider = Some(match choice.trim() {
+                "1" => "kimi".to_string(),
+                "2" => "openai".to_string(),
+                "3" => "anthropic".to_string(),
+                "4" => "ollama".to_string(),
+                _ => choice.trim().to_string(),
+            });
+            
+            // Set defaults
+            match config.llm.provider.as_deref() {
+                Some("kimi") => {
+                    config.llm.base_url = Some("https://api.moonshot.cn/v1".to_string());
+                    config.llm.model = Some("moonshot-v1-8k".to_string());
+                }
+                Some("openai") => {
+                    config.llm.base_url = Some("https://api.openai.com/v1".to_string());
+                    config.llm.model = Some("gpt-4o-mini".to_string());
+                }
+                Some("anthropic") => {
+                    config.llm.base_url = Some("https://api.anthropic.com/v1".to_string());
+                    config.llm.model = Some("claude-3-5-sonnet".to_string());
+                }
+                Some("ollama") => {
+                    config.llm.base_url = Some("http://localhost:11434/v1".to_string());
+                    config.llm.model = Some("qwen2.5:7b".to_string());
+                }
+                _ => {}
+            }
+        }
+        
+        // API Key
+        let masked = mask_key(config.llm.api_key.as_deref().unwrap_or(""));
+        print!("API Key (current: {}): ", masked);
+        std::io::stdout().flush()?;
+        let mut key = String::new();
+        std::io::stdin().read_line(&mut key)?;
+        if !key.trim().is_empty() {
+            config.llm.api_key = Some(key.trim().to_string());
+        }
+        
+        config.save()?;
+        println!("\n✅ LLM configuration saved to ~/.horcrux/config.toml");
+        Ok(())
+    }
+    
+    /// Quick image provider setup
+    async fn quick_setup_images(&self) -> Result<()> {
+        use horcrux::config::{Config, IMAGE_PROVIDER_PRESETS};
+        let mut config = Config::load().unwrap_or_default();
+        
+        println!("\n🖼️  Image Search Setup\n");
+        
+        for (i, preset) in IMAGE_PROVIDER_PRESETS.iter().enumerate() {
+            println!("  {}. {}", i + 1, preset.key_name);
+            println!("     {}", preset.description);
+            println!("     Rate: {}\n", preset.rate_limit);
+        }
+        
+        let current = config.images.provider.as_deref().unwrap_or("");
+        print!("Provider (current: {}): ", current);
+        std::io::stdout().flush()?;
+        let mut choice = String::new();
+        std::io::stdin().read_line(&mut choice)?;
+        
+        if !choice.trim().is_empty() {
+            config.images.provider = Some(match choice.trim() {
+                "1" => "unsplash".to_string(),
+                "2" => "pixabay".to_string(),
+                "3" => "pexels".to_string(),
+                _ => choice.trim().to_string(),
+            });
+        }
+        
+        let masked = mask_key(config.images.api_key.as_deref().unwrap_or(""));
+        print!("API Key (current: {}): ", masked);
+        std::io::stdout().flush()?;
+        let mut key = String::new();
+        std::io::stdin().read_line(&mut key)?;
+        if !key.trim().is_empty() {
+            config.images.api_key = Some(key.trim().to_string());
+        }
+        
+        config.save()?;
+        println!("\n✅ Image provider saved to ~/.horcrux/config.toml");
+        Ok(())
+    }
+    
+    /// Quick Telegram setup
+    async fn quick_setup_telegram(&self) -> Result<()> {
+        use horcrux::config::Config;
+        let mut config = Config::load().unwrap_or_default();
+        
+        println!("\n📱 Telegram Setup\n");
+        println!("Get a bot token from @BotFather on Telegram\n");
+        
+        let masked = mask_key(config.telegram.bot_token.as_deref().unwrap_or(""));
+        print!("Bot Token (current: {}): ", masked);
+        std::io::stdout().flush()?;
+        let mut token = String::new();
+        std::io::stdin().read_line(&mut token)?;
+        
+        if !token.trim().is_empty() {
+            config.telegram.bot_token = Some(token.trim().to_string());
+            config.telegram.enabled = true;
+        }
+        
+        config.save()?;
+        println!("\n✅ Telegram configuration saved");
         Ok(())
     }
     
@@ -1153,3 +1321,16 @@ enum DeploymentType {
     Local,
     Cloud,
 }
+
+
+// Helper function to mask API keys for display
+fn mask_key(key: &str) -> String {
+    if key.is_empty() {
+        return "not set".to_string();
+    }
+    if key.len() < 8 {
+        return "***".to_string();
+    }
+    format!("{}...{}", &key[..4], &key[key.len()-4..])
+}
+
