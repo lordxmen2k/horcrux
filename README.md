@@ -43,8 +43,9 @@ Horcrux is a **blazing-fast**, **privacy-first** AI agent built in Rust. It comb
 - **ReAct Loop** - Reasoning + Acting for complex multi-step tasks
 - **Tool Use** - HTTP requests, shell commands, file operations, web search
 - **Auto Skill Creation** - Detects repetitive workflows and offers to save them
-- **15+ Built-in Skills** - Hacker News, weather, crypto, git, Docker, and more
+- **106+ Built-in Skills** - Hacker News, weather, crypto, git, Docker, SSL checker, and more
 - **Subagents** - Spawn parallel subagents for concurrent task execution
+- **22 Personalities** - Harry Potter themed personas (Harry, Hermione, Snape, Dumbledore, etc.)
 
 ### 💬 Multi-Platform Messaging Bots
 Chat with your agent from anywhere:
@@ -350,6 +351,33 @@ Spawn multiple subagents to work on tasks in parallel:
    | Python   | FastAPI       | ...  | ...  |
    | Rust     | Axum          | ...  | ...  |
    | Go       | Gin           | ...  | ...  |
+```
+
+### Personalities 🎭
+
+Choose from 22 Harry Potter themed personalities to change how the agent communicates:
+
+| Personality | Style | Best For |
+|-------------|-------|----------|
+| **Voldemort** (default) | Cold, efficient, commanding | Getting straight to results |
+| **Hermione** | Precise, academic, correcting | Learning and detailed explanations |
+| **Snape** | Sharp, sarcastic, technically flawless | Code reviews and debugging |
+| **Dumbledore** | Wise, metaphorical, gentle | Architecture discussions |
+| **Ron** | Friendly, humble, humorous | Casual help and support |
+| **Harry** | Brave, intuitive, practical | Problem-solving under pressure |
+| **Luna** | Whimsical, unconventional connections | Brainstorming and creativity |
+| **McGonagall** | Firm, disciplined, fair | Code standards and best practices |
+| **Hagrid** | Warm, protective, encouraging | Beginners and learning |
+| **Draco** | Sophisticated, ambitious, exclusive | High-stakes projects |
+
+```bash
+# Set personality in setup
+horcrux setup
+
+# Or set directly in config
+# ~/.horcrux/config.toml:
+# [agent]
+# personality = "snape"
 ```
 
 ### Dreaming (Memory Consolidation)
