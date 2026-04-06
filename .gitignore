@@ -15,6 +15,11 @@ Cargo.lock
 .env.local
 .env.*.local
 
+# Config files with secrets
+config.toml
+*.config.toml
+secrets.toml
+
 # Database files
 *.db
 *.db-shm

@@ -1,0 +1,86 @@
+# Horcrux Configuration Example
+# Copy this to ~/.horcrux/config.toml and fill in your values
+# NEVER commit the real config.toml to git!
+
+[llm]
+# Option 1: Kimi (Moonshot) - Recommended for tool use
+url = "https://api.moonshot.cn/v1"
+model = "moonshot-v1-8k"
+api_key = "sk-your-kimi-key-here"
+
+# Option 2: Ollama (Local - FREE)
+# url = "http://localhost:11434/v1"
+# model = "llama3.1:8b"
+# api_key = "ollama"
+
+# Option 3: OpenAI
+# url = "https://api.openai.com/v1"
+# model = "gpt-4o-mini"
+# api_key = "sk-your-openai-key"
+
+[embed]
+# Embedding model for semantic search
+url = "http://localhost:11434/v1"
+model = "nomic-embed-text"
+
+[voice]
+# Voice transcription provider
+provider = "openai"  # or "deepgram"
+api_key = "sk-your-key"
+model = "whisper-1"
+language = "en"
+
+[web_search]
+# Web search provider
+provider = "tavily"  # or "serper", "brave"
+api_key = "tvly-your-key"
+
+[dream]
+enabled = true
+schedule = "0 3 * * *"  # Daily at 3am
+min_conversations = 5
+lookback_hours = 24
+importance_threshold = 0.7
+
+[scheduler]
+enabled = true
+
+[agent]
+# Default personality (22 available: harry, hermione, snape, dumbledore, etc.)
+personality = "voldemort"
+auto_skill_creation = true
+
+# MCP Servers - connect to external tool servers
+[[mcp.servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+
+# [[mcp.servers]]
+# name = "github"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+# env = { GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_your_token" }
+
+# Telegram Bot (can also use TELEGRAM_BOT_TOKEN env var)
+[telegram]
+enabled = false
+# bot_token = "your-telegram-bot-token"
+
+# Discord Bot
+[discord]
+enabled = false
+# token = "your-discord-bot-token"
+
+# Slack Bot
+[slack]
+enabled = false
+# bot_token = "xoxb-your-token"
+# signing_secret = "your-signing-secret"
+
+# WhatsApp (Twilio)
+[whatsapp]
+enabled = false
+# account_sid = "ACxxx"
+# auth_token = "your-token"
+# from_number = "whatsapp:+14155238886"
