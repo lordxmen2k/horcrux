@@ -50,6 +50,10 @@ enabled = true
 personality = "voldemort"
 auto_skill_creation = true
 
+# GitHub Personal Access Token (for GitHub API access and MCP server)
+[github]
+# token = "ghp_your_personal_access_token_here"
+
 # MCP Servers - connect to external tool servers
 [[mcp.servers]]
 name = "filesystem"
