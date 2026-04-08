@@ -23,7 +23,7 @@ jobs:
             binary_name: horcrux.exe
             asset_name: horcrux-windows-x64.exe
           
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             binary_name: horcrux
             asset_name: horcrux-linux-x64
@@ -51,14 +51,22 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev musl-tools
+          sudo apt-get install -y pkg-config musl-tools
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           brew install openssl@3
 
-      - name: Build release binary
+      - name: Install Rust target and build (Linux musl)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          # Use cross or build with musl-gcc
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Build release binary (other targets)
+        if: matrix.target != 'x86_64-unknown-linux-musl'
         run: cargo build --release --target ${{ matrix.target }}
         env:
           OPENSSL_LIB_DIR: /usr/lib/x86_64-linux-gnu
