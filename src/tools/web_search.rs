@@ -2,20 +2,29 @@
 //!
 //! Supports: Tavily (primary), Serper.dev, Brave Search
 //! API key loaded from config.toml [web_search] section
+//! Self-healing: Reloads config on each call, provides diagnostic info
 
 use super::{Tool, ToolResult};
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::{Arc, RwLock};
 
 pub struct WebSearchTool {
     client: reqwest::Client,
-    config: Option<WebSearchProviderConfig>,
+    config: Arc<RwLock<Option<WebSearchProviderConfig>>>,
 }
 
 #[derive(Debug, Clone)]
 struct WebSearchProviderConfig {
     provider: Provider,
     api_key: String,
+}
+
+#[derive(Debug, Clone)]
+enum Provider {
+    Tavily,
+    Serper,
+    Brave,
 }
 
 impl WebSearchProviderConfig {
@@ -28,13 +37,6 @@ impl WebSearchProviderConfig {
     }
 }
 
-#[derive(Debug, Clone)]
-enum Provider {
-    Tavily,
-    Serper,
-    Brave,
-}
-
 impl WebSearchTool {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
@@ -42,56 +44,159 @@ impl WebSearchTool {
             .build()
             .expect("Failed to build HTTP client");
         
-        // Load from config file
-        let config = Self::load_config_from_file();
+        // Initial config load
+        let config = Self::load_config();
         
-        if let Some(ref cfg) = config {
-            println!("✅ WebSearchTool: Using {} API", cfg.provider_name());
+        if config.is_some() {
+            tracing::info!("✅ WebSearchTool initialized with API key");
         } else {
-            println!("⚠️ WebSearchTool: No API key configured (add to ~/.horcrux/config.toml)");
+            tracing::warn!("⚠️ WebSearchTool: No API key configured");
         }
             
-        Self { client, config }
+        Self { 
+            client, 
+            config: Arc::new(RwLock::new(config)),
+        }
     }
     
-    /// Load config from the main config file
-    fn load_config_from_file() -> Option<WebSearchProviderConfig> {
-        if let Ok(global_config) = crate::config::Config::load() {
-            if global_config.web_search.is_configured() {
-                let provider = match global_config.web_search.provider().to_lowercase().as_str() {
-                    "tavily" => Provider::Tavily,
-                    "serper" => Provider::Serper,
-                    "brave" => Provider::Brave,
-                    _ => Provider::Tavily,
-                };
-                return Some(WebSearchProviderConfig {
-                    provider,
-                    api_key: global_config.web_search.api_key.unwrap(),
-                });
+    /// Load or reload config from file
+    fn load_config() -> Option<WebSearchProviderConfig> {
+        // Try to load from the main config file
+        match crate::config::Config::load() {
+            Ok(global_config) => {
+                if global_config.web_search.is_configured() {
+                    let provider = match global_config.web_search.provider().to_lowercase().as_str() {
+                        "tavily" => Provider::Tavily,
+                        "serper" => Provider::Serper,
+                        "brave" => Provider::Brave,
+                        _ => Provider::Tavily,
+                    };
+                    tracing::info!("Web search config loaded: {}", global_config.web_search.provider());
+                    return Some(WebSearchProviderConfig {
+                        provider,
+                        api_key: global_config.web_search.api_key.unwrap(),
+                    });
+                } else {
+                    tracing::debug!("Web search not configured: provider={:?}, key_exists={}", 
+                        global_config.web_search.provider,
+                        global_config.web_search.api_key.is_some());
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to load config: {}", e);
             }
         }
+        
+        // Fallback: Try environment variables
+        if let Ok(api_key) = std::env::var("TAVILY_API_KEY") {
+            tracing::info!("Web search config loaded from TAVILY_API_KEY env var");
+            return Some(WebSearchProviderConfig {
+                provider: Provider::Tavily,
+                api_key,
+            });
+        }
+        if let Ok(api_key) = std::env::var("SERPER_API_KEY") {
+            tracing::info!("Web search config loaded from SERPER_API_KEY env var");
+            return Some(WebSearchProviderConfig {
+                provider: Provider::Serper,
+                api_key,
+            });
+        }
+        if let Ok(api_key) = std::env::var("BRAVE_API_KEY") {
+            tracing::info!("Web search config loaded from BRAVE_API_KEY env var");
+            return Some(WebSearchProviderConfig {
+                provider: Provider::Brave,
+                api_key,
+            });
+        }
+        
         None
     }
     
-    fn provider_name(&self) -> &'static str {
-        match self.config.as_ref().map(|c| &c.provider) {
-            Some(Provider::Tavily) => "Tavily",
-            Some(Provider::Serper) => "Serper.dev",
-            Some(Provider::Brave) => "Brave Search",
-            None => "None",
+    /// Reload config (call this before each search to pick up changes)
+    fn reload_config(&self) {
+        let new_config = Self::load_config();
+        if let Ok(mut config) = self.config.write() {
+            *config = new_config;
         }
+    }
+    
+    /// Get diagnostic information about why config might be failing
+    fn get_diagnostic_info() -> String {
+        let mut info = String::from("Web Search Diagnostic Info:\n\n");
+        
+        // Check config file
+        let config_path = crate::config::Config::config_path();
+        info.push_str(&format!("Config file path: {}\n", config_path.display()));
+        info.push_str(&format!("Config file exists: {}\n", config_path.exists()));
+        
+        if config_path.exists() {
+            match std::fs::read_to_string(&config_path) {
+                Ok(content) => {
+                    info.push_str("Config file content length: ");
+                    info.push_str(&content.len().to_string());
+                    info.push_str(" bytes\n");
+                    
+                    // Check for web_search section
+                    if content.contains("[web_search]") {
+                        info.push_str("✓ Found [web_search] section\n");
+                        
+                        // Check for api_key
+                        if content.contains("api_key") {
+                            info.push_str("✓ Found api_key field\n");
+                            
+                            // Check if it has a value
+                            if content.contains(r#"api_key = ""#) || content.contains(r#"api_key=""#) {
+                                info.push_str("✗ api_key appears to be empty\n");
+                            } else if content.contains("tvly-") || content.contains("sk-") {
+                                info.push_str("✓ api_key appears to have a value\n");
+                            }
+                        } else {
+                            info.push_str("✗ No api_key field found\n");
+                        }
+                    } else {
+                        info.push_str("✗ No [web_search] section found\n");
+                    }
+                }
+                Err(e) => {
+                    info.push_str(&format!("✗ Failed to read config: {}\n", e));
+                }
+            }
+        }
+        
+        // Check environment variables
+        info.push_str("\nEnvironment variables:\n");
+        info.push_str(&format!("  TAVILY_API_KEY: {}\n", 
+            if std::env::var("TAVILY_API_KEY").is_ok() { "✓ Set" } else { "✗ Not set" }));
+        info.push_str(&format!("  SERPER_API_KEY: {}\n",
+            if std::env::var("SERPER_API_KEY").is_ok() { "✓ Set" } else { "✗ Not set" }));
+        info.push_str(&format!("  BRAVE_API_KEY: {}\n",
+            if std::env::var("BRAVE_API_KEY").is_ok() { "✓ Set" } else { "✗ Not set" }));
+        
+        info.push_str("\nTo fix:\n");
+        info.push_str("1. Add to ~/.horcrux/config.toml:\n");
+        info.push_str("   [web_search]\n");
+        info.push_str("   provider = \"tavily\"\n");
+        info.push_str("   api_key = \"tvly-your-key-here\"\n\n");
+        info.push_str("2. Or set environment variable:\n");
+        info.push_str("   export TAVILY_API_KEY=tvly-your-key\n\n");
+        info.push_str("Get free key at https://tavily.com (1000 searches/month)");
+        
+        info
     }
     
     /// Search using configured provider
     async fn search(&self, query: &str, max_results: usize) -> anyhow::Result<Vec<WebResult>> {
-        let config = self.config.as_ref()
+        // Reload config to pick up any changes
+        self.reload_config();
+        
+        let config = self.config.read()
+            .map_err(|e| anyhow::anyhow!("Config lock poisoned: {}", e))?
+            .clone()
             .ok_or_else(|| anyhow::anyhow!(
-                "No web search API key configured.\n\n\
-                Add to ~/.horcrux/config.toml:\n\n\
-                [web_search]\n\
-                provider = \"tavily\"\n\
-                api_key = \"your-api-key\"\n\n\
-                Get free key at https://tavily.com (1000 searches/month)"
+                "No web search API key configured.\n\n{}\n\nTo fix:\n{}",
+                Self::get_diagnostic_info(),
+                "Run 'horcrux setup' or edit ~/.horcrux/config.toml"
             ))?;
         
         match config.provider {
@@ -101,145 +206,142 @@ impl WebSearchTool {
         }
     }
     
-    /// Tavily search - AI-optimized results
+    /// Search using Tavily API
     async fn search_tavily(&self, query: &str, max_results: usize, api_key: &str) -> anyhow::Result<Vec<WebResult>> {
-        let payload = serde_json::json!({
-            "api_key": api_key,
+        let request_body = serde_json::json!({
             "query": query,
             "max_results": max_results,
-            "search_depth": "basic",
-            "include_answer": false,
-            "include_images": false,
-            "include_raw_content": false
+            "api_key": api_key,
+            "search_depth": "advanced",
+            "include_answer": true,
         });
         
         let response = self.client
             .post("https://api.tavily.com/search")
-            .json(&payload)
+            .json(&request_body)
             .send()
             .await?;
-            
+        
         if !response.status().is_success() {
             let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Tavily API error {}: {}", status, text));
+            let error_text = response.text().await.unwrap_or_default();
+            
+            // Check for specific error types
+            if status == 401 || status == 403 {
+                return Err(anyhow::anyhow!(
+                    "Authentication failed. Your Tavily API key may be invalid or expired.\n\
+                    Status: {}\nError: {}\n\n\
+                    Please check your API key at https://tavily.com",
+                    status, error_text
+                ));
+            }
+            if status == 429 {
+                return Err(anyhow::anyhow!(
+                    "Rate limit exceeded. You've used your quota of 1000 free searches/month.\n\
+                    Please wait or upgrade your Tavily plan."
+                ));
+            }
+            
+            return Err(anyhow::anyhow!(
+                "Tavily API error: {} - {}", status, error_text
+            ));
         }
         
-        let json: Value = response.json().await?;
+        let result: TavilyResponse = response.json().await?;
+        
         let mut results = Vec::new();
         
-        if let Some(results_arr) = json.get("results").and_then(|r| r.as_array()) {
-            for r in results_arr {
-                if let Some(title) = r.get("title").and_then(|t| t.as_str()) {
-                    let url = r.get("url").and_then(|u| u.as_str()).unwrap_or("");
-                    let content = r.get("content")
-                        .or_else(|| r.get("snippet"))
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("");
-                        
-                    results.push(WebResult {
-                        title: title.to_string(),
-                        url: url.to_string(),
-                        snippet: content.to_string(),
-                    });
-                }
-            }
+        // Add the AI answer if present
+        if let Some(answer) = result.answer {
+            results.push(WebResult {
+                title: "AI Summary".to_string(),
+                url: "https://tavily.com".to_string(),
+                snippet: answer,
+                source: "tavily-ai".to_string(),
+            });
+        }
+        
+        // Add regular results
+        for r in result.results {
+            results.push(WebResult {
+                title: r.title,
+                url: r.url,
+                snippet: r.content,
+                source: r.source.unwrap_or_else(|| "web".to_string()),
+            });
         }
         
         Ok(results)
     }
     
-    /// Serper.dev search - Google Search API
+    /// Search using Serper.dev API
     async fn search_serper(&self, query: &str, max_results: usize, api_key: &str) -> anyhow::Result<Vec<WebResult>> {
-        let payload = serde_json::json!({
+        let request_body = serde_json::json!({
             "q": query,
-            "num": max_results
+            "num": max_results,
         });
         
         let response = self.client
             .post("https://google.serper.dev/search")
             .header("X-API-KEY", api_key)
-            .json(&payload)
+            .json(&request_body)
             .send()
             .await?;
-            
+        
         if !response.status().is_success() {
             let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Serper API error {}: {}", status, text));
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Serper API error: {} - {}", status, error_text
+            ));
         }
         
-        let json: Value = response.json().await?;
-        let mut results = Vec::new();
+        let result: SerperResponse = response.json().await?;
         
-        // Parse organic results
-        if let Some(organic) = json.get("organic").and_then(|o| o.as_array()) {
-            for r in organic {
-                if let Some(title) = r.get("title").and_then(|t| t.as_str()) {
-                    let url = r.get("link").and_then(|l| l.as_str()).unwrap_or("");
-                    let snippet = r.get("snippet").and_then(|s| s.as_str()).unwrap_or("");
-                    
-                    results.push(WebResult {
-                        title: title.to_string(),
-                        url: url.to_string(),
-                        snippet: snippet.to_string(),
-                    });
-                }
-            }
-        }
+        let results: Vec<WebResult> = result.organic
+            .into_iter()
+            .map(|r| WebResult {
+                title: r.title,
+                url: r.link,
+                snippet: r.snippet,
+                source: r.source.unwrap_or_else(|| "google".to_string()),
+            })
+            .collect();
         
         Ok(results)
     }
     
-    /// Brave Search API
+    /// Search using Brave Search API
     async fn search_brave(&self, query: &str, max_results: usize, api_key: &str) -> anyhow::Result<Vec<WebResult>> {
-        let url = format!(
-            "https://api.search.brave.com/res/v1/web/search?q={}&count={}&offset=0",
-            urlencoding::encode(query),
-            max_results
-        );
-        
         let response = self.client
-            .get(&url)
-            .header("Accept", "application/json")
+            .get("https://api.search.brave.com/res/v1/web/search")
             .header("X-Subscription-Token", api_key)
+            .query(&[("q", query), ("count", &max_results.to_string())])
             .send()
             .await?;
-            
+        
         if !response.status().is_success() {
             let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Brave API error {}: {}", status, text));
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Brave Search API error: {} - {}", status, error_text
+            ));
         }
         
-        let json: Value = response.json().await?;
-        let mut results = Vec::new();
+        let result: BraveResponse = response.json().await?;
         
-        // Parse web results
-        if let Some(web_results) = json.get("web").and_then(|w| w.get("results")).and_then(|r| r.as_array()) {
-            for r in web_results {
-                if let Some(title) = r.get("title").and_then(|t| t.as_str()) {
-                    let url = r.get("url").and_then(|u| u.as_str()).unwrap_or("");
-                    let description = r.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                    
-                    results.push(WebResult {
-                        title: title.to_string(),
-                        url: url.to_string(),
-                        snippet: description.to_string(),
-                    });
-                }
-            }
-        }
+        let results: Vec<WebResult> = result.web.results
+            .into_iter()
+            .map(|r| WebResult {
+                title: r.title,
+                url: r.url,
+                snippet: r.description,
+                source: "brave".to_string(),
+            })
+            .collect();
         
         Ok(results)
     }
-}
-
-#[derive(Debug, Clone)]
-struct WebResult {
-    title: String,
-    url: String,
-    snippet: String,
 }
 
 #[async_trait]
@@ -247,12 +349,14 @@ impl Tool for WebSearchTool {
     fn name(&self) -> &str {
         "web_search"
     }
-
+    
     fn description(&self) -> &str {
-        "Search the internet using AI-optimized search APIs (Tavily, Serper, or Brave). \
-         Requires API key in config.toml [web_search] section."
+        "Search the web for current information. \
+         Use this when you need up-to-date facts, news, or information not in your knowledge base. \
+         Returns search results with titles, URLs, and snippets. \
+         Requires web search API key to be configured."
     }
-
+    
     fn parameters_schema(&self) -> Value {
         serde_json::json!({
             "type": "object",
@@ -261,81 +365,111 @@ impl Tool for WebSearchTool {
                     "type": "string",
                     "description": "The search query"
                 },
-                "count": {
+                "max_results": {
                     "type": "integer",
-                    "description": "Number of results (1-10, default: 5)",
+                    "description": "Maximum number of results to return (default: 5)",
                     "default": 5,
                     "minimum": 1,
-                    "maximum": 10
+                    "maximum": 20
                 }
             },
             "required": ["query"]
         })
     }
-
-    async fn execute(&self, args: Value) -> anyhow::Result<ToolResult> {
+    
+    async fn execute(&self, args: Value) -> Result<ToolResult, anyhow::Error> {
         let query = args["query"].as_str()
-            .ok_or_else(|| anyhow::anyhow!("Missing query parameter"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing 'query' parameter"))?;
+        let max_results = args["max_results"].as_u64().unwrap_or(5) as usize;
         
-        let count = args["count"].as_i64().unwrap_or(5) as usize;
-        let count = count.min(10).max(1);
-        
-        // Check if configured
-        if self.config.is_none() {
-            return Ok(ToolResult::error(
-                "Web search is not configured.\n\n\
-                Add to ~/.horcrux/config.toml:\n\n\
-                [web_search]\n\
-                provider = \"tavily\"\n\
-                api_key = \"your-api-key\"\n\n\
-                Get free key at https://tavily.com (1000 searches/month)".to_string()
-            ));
-        }
-        
-        match self.search(query, count).await {
+        match self.search(query, max_results).await {
             Ok(results) => {
                 if results.is_empty() {
-                    return Ok(ToolResult::success(
-                        format!("No results found for '{}'.", query)
-                    ));
+                    return Ok(ToolResult::success("No results found for the query."));
                 }
                 
-                let provider = self.provider_name();
-                let mut output = format!("Found {} results for '{}' (via {}):\n\n", 
-                    results.len(), query, provider);
+                let mut output = format!("Web search results for '{}':\n\n", query);
                 
                 for (i, result) in results.iter().enumerate() {
                     output.push_str(&format!(
-                        "{}. {}\n   URL: {}\n   {}\n\n",
+                        "[{}] {}\n{}
+{}
+\n",
                         i + 1,
                         result.title,
                         result.url,
-                        if result.snippet.len() > 200 {
-                            format!("{}...", &result.snippet[..200])
-                        } else {
-                            result.snippet.clone()
-                        }
+                        result.snippet
                     ));
                 }
                 
                 Ok(ToolResult::success(output))
             }
             Err(e) => {
+                // Return diagnostic info with the error
                 Ok(ToolResult::error(format!(
-                    "Web search failed: {}", e
+                    "Web search failed: {}\n\n{}",
+                    e,
+                    Self::get_diagnostic_info()
                 )))
             }
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// A single web search result
+#[derive(Debug)]
+struct WebResult {
+    title: String,
+    url: String,
+    snippet: String,
+    source: String,
+}
 
-    #[test]
-    fn test_web_search_tool_creation() {
-        let tool = WebSearchTool::new();
-        assert_eq!(tool.name(), "web_search");
-    }
+// Tavily API response structures
+#[derive(Debug, serde::Deserialize)]
+struct TavilyResponse {
+    answer: Option<String>,
+    results: Vec<TavilyResult>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct TavilyResult {
+    title: String,
+    url: String,
+    content: String,
+    #[serde(default)]
+    source: Option<String>,
+}
+
+// Serper API response structures
+#[derive(Debug, serde::Deserialize)]
+struct SerperResponse {
+    organic: Vec<SerperResult>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SerperResult {
+    title: String,
+    link: String,
+    snippet: String,
+    #[serde(default)]
+    source: Option<String>,
+}
+
+// Brave Search API response structures
+#[derive(Debug, serde::Deserialize)]
+struct BraveResponse {
+    web: BraveWebResults,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct BraveWebResults {
+    results: Vec<BraveResult>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct BraveResult {
+    title: String,
+    url: String,
+    description: String,
 }

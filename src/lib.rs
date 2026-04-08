@@ -17,6 +17,7 @@ pub mod chunk;
 pub mod config;
 pub mod context;
 pub mod db;
+pub mod doctor;
 pub mod dream;
 pub mod embed;
 pub mod gateway;

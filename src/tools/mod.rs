@@ -27,7 +27,7 @@ pub use image_search::ImageSearchTool;
 pub use mcp::{McpToolWrapper, McpToolManager};
 pub use search::SearchTool;
 pub use session_search::SessionSearchTool;
-pub use shell::ShellTool;
+pub use shell::{ShellTool, SelfHealTool};
 pub use voice::VoiceTranscriptionTool;
 pub use web_search::WebSearchTool;
 pub use skills::{CreateSkillTool, ListSkillsTool, Skill, SkillImplementation, SkillManager, SkillTool};
@@ -140,8 +140,14 @@ impl ToolRegistry {
         // Register web search tool for current information
         registry.register(Arc::new(WebSearchTool::new()));
         
-        // NOTE: Shell and HTTP tools removed - model was using them incorrectly
-        // instead of the proper web_search tool for product research
+        // Register shell tool for system commands (with permission controls)
+        registry.register(Arc::new(ShellTool::new()));
+        
+        // Register self-heal tool for diagnostics and repair
+        registry.register(Arc::new(SelfHealTool::new()));
+        
+        // Register system health monitoring tool
+        registry.register(Arc::new(crate::doctor::tool::SystemHealthTool::new()));
         
         // Register config manager (for setup/config, not general use)
         registry.register(Arc::new(ConfigManagerTool::new()));
