@@ -74,8 +74,8 @@ async-trait = "0.1"
 # Random numbers (for session IDs)
 rand = "0.8"
 
-# Telegram bot API
-teloxide = { version = "0.12", features = ["macros"] }
+# Telegram bot API - use rustls to avoid OpenSSL
+teloxide = { version = "0.12", default-features = false, features = ["macros", "rustls"] }
 
 # Discord bot API
 serenity = { version = "0.12", default-features = false, features = [
