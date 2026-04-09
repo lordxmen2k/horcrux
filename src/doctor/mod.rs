@@ -3,8 +3,6 @@
 //! Monitors system health, diagnoses issues, and performs repairs
 
 use anyhow::{Context, Result};
-use std::collections::HashMap;
-use tracing::{error, info, warn};
 
 /// System health metrics
 #[derive(Debug, Clone, Default)]

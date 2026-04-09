@@ -6,12 +6,11 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tracing::{error, info, warn};
+use tracing::info;
 
 /// Dreaming configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

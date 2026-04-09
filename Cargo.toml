@@ -75,7 +75,7 @@ async-trait = "0.1"
 rand = "0.8"
 
 # Telegram bot API - use rustls to avoid OpenSSL
-teloxide = { version = "0.12", default-features = false, features = ["macros", "rustls"] }
+teloxide = { version = "0.12", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
 
 # Discord bot API
 serenity = { version = "0.12", default-features = false, features = [

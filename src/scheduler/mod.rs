@@ -11,7 +11,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// A scheduled task
 #[derive(Debug, Clone, Serialize, Deserialize)]
