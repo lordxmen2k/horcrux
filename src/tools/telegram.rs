@@ -153,7 +153,7 @@ impl TelegramBot {
         self.bot = Some(bot.clone());
 
         // Setup message channel
-        let (tx, mut rx) = mpsc::unbounded_channel::<TelegramMessage>();
+        let (tx, _rx) = mpsc::unbounded_channel::<TelegramMessage>();
         self.message_sender = Some(tx.clone());
 
         // Start the bot in background
