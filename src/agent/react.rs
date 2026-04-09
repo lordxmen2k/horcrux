@@ -726,7 +726,7 @@ impl ReActAgent {
         // DEBUG: Print all messages being sent to LLM
         println!("📤 Building messages for LLM ({} history items):", history.len());
         for (i, msg) in history.iter().enumerate() {
-            let preview = if msg.content.len() > 50 { &msg.content[..50] } else { &msg.content };
+            let preview: String = msg.content.chars().take(50).collect();
             match msg.role.as_str() {
                 "assistant" => {
                     let tc_count = msg.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0);

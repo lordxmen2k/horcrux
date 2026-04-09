@@ -1,0 +1,37 @@
+{
+  "name": "tiktok_scheduler",
+  "description": "Schedule and manage TikTok posting times. Sets up cron-based scheduling for TikTok content posting at specified times.",
+  "parameters": {
+    "properties": {
+      "action": {
+        "default": "set",
+        "description": "Action to perform",
+        "enum": [
+          "set",
+          "get"
+        ],
+        "type": "string"
+      },
+      "time": {
+        "description": "Time to schedule (e.g., '15:00', '3PM', '3:00PM')",
+        "type": "string"
+      },
+      "timezone": {
+        "default": "EST",
+        "description": "Timezone for the schedule",
+        "type": "string"
+      }
+    },
+    "required": [
+      "time"
+    ],
+    "type": "object"
+  },
+  "implementation": {
+    "type": "shell",
+    "script": "#!/usr/bin/env python3\n\"\"\"\nTikTok Scheduler - Manages posting schedules for TikTok content\nUsage: python tiktok_scheduler.py --time \"15:00\" --timezone \"EST\"\n\"\"\"\nimport argparse\nimport json\nimport os\nfrom datetime import datetime\nimport pytz\n\nCONFIG_PATH = os.path.expanduser(\"~/.horcrux/tiktok_schedule.json\")\n\ndef set_schedule(time_str, timezone=\"EST\"):\n    \"\"\"Set TikTok posting schedule\"\"\"\n    # Parse time (e.g., \"15:00\" or \"3PM\")\n    time_str = time_str.upper().replace(\" \", \"\")\n    if \"PM\" in time_str or \"AM\" in time_str:\n        # Convert 12-hour to 24-hour format\n        dt = datetime.strptime(time_str, \"%I%p\" if \":\" not in time_str else \"%I:%M%p\")\n        hour, minute = dt.hour, dt.minute\n    else:\n        hour, minute = map(int, time_str.split(\":\"))\n    \n    # Create cron expression (daily at specified time)\n    cron = f\"{minute} {hour} * * *\"\n    \n    schedule = {\n        \"platform\": \"tiktok\",\n        \"hour\": hour,\n        \"minute\": minute,\n        \"timezone\": timezone,\n        \"cron\": cron,\n        \"time_24h\": f\"{hour:02d}:{minute:02d}\",\n        \"time_12h\": datetime.strptime(f\"{hour}:{minute}\", \"%H:%M\").strftime(\"%I:%M %p\"),\n        \"enabled\": True\n    }\n    \n    # Save config\n    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)\n    with open(CONFIG_PATH, 'w') as f:\n        json.dump(schedule, f, indent=2)\n    \n    print(f\"✅ TikTok schedule set to {schedule['time_12h']} {timezone}\")\n    print(f\"   Cron: {cron}\")\n    print(f\"   Config saved to: {CONFIG_PATH}\")\n    return schedule\n\ndef get_schedule():\n    \"\"\"Get current TikTok schedule\"\"\"\n    if os.path.exists(CONFIG_PATH):\n        with open(CONFIG_PATH, 'r') as f:\n            return json.load(f)\n    return None\n\ndef main():\n    parser = argparse.ArgumentParser(description=\"TikTok Scheduler\")\n    parser.add_argument(\"--time\", \"-t\", help=\"Time to post (e.g., '15:00', '3PM')\")\n    parser.add_argument(\"--timezone\", \"-z\", default=\"EST\", help=\"Timezone (default: EST)\")\n    parser.add_argument(\"--get\", \"-g\", action=\"store_true\", help=\"Get current schedule\")\n    \n    args = parser.parse_args()\n    \n    if args.get:\n        schedule = get_schedule()\n        if schedule:\n            print(f\"Current TikTok schedule: {schedule['time_12h']} {schedule['timezone']}\")\n        else:\n            print(\"No TikTok schedule configured\")\n    elif args.time:\n        set_schedule(args.time, args.timezone)\n    else:\n        parser.print_help()\n\nif __name__ == \"__main__\":\n    main()",
+    "interpreter": "python3"
+  },
+  "created_at": "2026-04-09T15:23:29.151371800+00:00",
+  "usage_count": 0
+}
