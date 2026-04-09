@@ -244,7 +244,7 @@ impl Doctor {
     #[cfg(unix)]
     fn check_load_average(&self) -> Result<Vec<f32>> {
         let load = sysinfo::System::load_average();
-        Ok(vec![load.one, load.five, load.fifteen])
+        Ok(vec![load.one as f32, load.five as f32, load.fifteen as f32])
     }
     
     /// Check configuration health
