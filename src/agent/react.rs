@@ -1330,6 +1330,25 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
         FAILURE EXAMPLE: Sending ComfyUI_00013_Lilithyn.png after vision said NO\n\
         SUCCESS EXAMPLE: Sending only dotxbox.png and dotxbox 1.png after vision said YES\n\n");
 
+    prompt.push_str("DOCUMENT SEARCH CLARIFICATION:\n\
+        When user asks to find a document 'with word X':\n\
+        YOU MUST ASK: 'Do you mean a file with X in the filename, or a file containing X inside its content?'\n\
+        - If filename: Use filesystem list_dir or shell find\n\
+        - If content: Use file_search tool to search inside documents\n\
+        NEVER assume which one they mean - always clarify first!\n\
+        NEVER hallucinate a filename if search returns no results!\n\
+        If no files found, say: 'I couldn't find any files matching that. Could you check the spelling or location?'\n\
+        WRONG: Making up 'Treasury.pdf' when no such file exists\n\
+        CORRECT: Asking for clarification, then searching appropriately\n\n");
+
+    prompt.push_str("GROUNDING REQUIREMENT:\n\
+        ALL factual claims MUST be backed by tool outputs or provided context.\n\
+        - Before claiming 'The file is X.pdf', verify the tool output actually shows that filename\n\
+        - If tool returns 'No files found', DO NOT invent a filename - report the failure honestly\n\
+        - Double-check: Does my response match what the tool actually returned?\n\
+        WRONG: Tool returns '[]' (empty), agent says 'Found Treasury.pdf'\n\
+        CORRECT: Tool returns '[]', agent says 'No files found with that name'\n\n");
+
     prompt.push_str("WORKFLOW:\n\
         - When given a task, break it down into steps\n\
         - Use tools to gather information as needed\n\
