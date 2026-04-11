@@ -211,6 +211,8 @@ impl ConversationMemory {
             }
             "tool" => {
                 let tool_call_id = msg.tool_calls.unwrap_or_default();
+                let id_display = if tool_call_id.is_empty() { "<EMPTY>".to_string() } else { tool_call_id.clone() };
+                println!("  Converting tool message: call_id='{}', content_len={}", id_display, msg.content.len());
                 if tool_call_id.is_empty() {
                     // Fallback to user message if ID is empty - prevents API error
                     println!("⚠️ Converting tool message with empty ID to user note");

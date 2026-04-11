@@ -1,9 +1,11 @@
 //! File System Tool - Read, write, and list files
+//!
+//! Cross-platform filesystem operations with automatic path expansion
 
 use super::{Tool, ToolResult};
 use async_trait::async_trait;
 use serde_json::Value;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct FileSystemTool;
 
@@ -11,37 +13,102 @@ impl FileSystemTool {
     pub fn new() -> Self {
         Self
     }
+    
+    /// Expand paths like ~/Documents to absolute paths
+    fn expand_path(&self, path: &str) -> PathBuf {
+        let path = if path.starts_with("~/") {
+            // Expand ~ to home directory
+            if let Some(home) = dirs::home_dir() {
+                home.join(&path[2..])
+            } else {
+                PathBuf::from(path)
+            }
+        } else {
+            PathBuf::from(path)
+        };
+        
+        // Normalize the path
+        path.canonicalize().unwrap_or(path)
+    }
+    
+    /// Get helpful error message based on platform
+    fn get_error_context(&self, path: &str, err: &std::io::Error) -> String {
+        let platform = if cfg!(windows) { "Windows" } else { "Unix" };
+        let mut msg = format!("Error accessing '{}': {}", path, err);
+        
+        if cfg!(windows) {
+            if path.contains('/') && !path.contains("\\") {
+                msg.push_str("\n\n💡 Hint: You're using Unix-style paths (/) on Windows.");
+                msg.push_str("\n   Try using backslashes (\\) instead, e.g.: C:\\Users\\name\\Documents");
+            }
+            if path.starts_with("~/") {
+                if let Some(home) = dirs::home_dir() {
+                    msg.push_str(&format!("\n\n💡 Hint: ~ expanded to: {}", home.display()));
+                }
+            }
+        }
+        
+        if err.kind() == std::io::ErrorKind::NotFound {
+            msg.push_str(&format!("\n\n💡 Hint: Make sure the path exists and you have permissions."));
+            if let Some(parent) = Path::new(path).parent() {
+                msg.push_str(&format!("\n   Parent directory would be: {}", parent.display()));
+            }
+        }
+        
+        msg
+    }
 
     fn read_file(&self, path: &str) -> anyhow::Result<String> {
-        let content = std::fs::read_to_string(path)?;
-        Ok(content)
+        let expanded = self.expand_path(path);
+        match std::fs::read_to_string(&expanded) {
+            Ok(content) => Ok(content),
+            Err(e) => Err(anyhow::anyhow!("{}", self.get_error_context(path, &e)))
+        }
     }
 
     fn write_file(&self, path: &str, content: &str, append: bool) -> anyhow::Result<String> {
-        let path_obj = Path::new(path);
+        let expanded = self.expand_path(path);
+        let path_obj = Path::new(&expanded);
         
         // Create parent directories if needed
         if let Some(parent) = path_obj.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                anyhow::anyhow!("Failed to create parent directories: {}", e)
+            })?;
         }
 
         if append {
-            let existing = std::fs::read_to_string(path).unwrap_or_default();
+            let existing = std::fs::read_to_string(&expanded).unwrap_or_default();
             let new_content = format!("{}{}", existing, content);
-            std::fs::write(path, new_content)?;
+            std::fs::write(&expanded, new_content).map_err(|e| {
+                anyhow::anyhow!("{}", self.get_error_context(path, &e))
+            })?;
             Ok(format!("Appended {} bytes to {}", content.len(), path))
         } else {
-            std::fs::write(path, content)?;
+            std::fs::write(&expanded, content).map_err(|e| {
+                anyhow::anyhow!("{}", self.get_error_context(path, &e))
+            })?;
             Ok(format!("Wrote {} bytes to {}", content.len(), path))
         }
     }
 
     fn list_directory(&self, path: &str, recursive: bool) -> anyhow::Result<String> {
+        let expanded = self.expand_path(path);
         let mut output = String::new();
         
+        // Show what path we're actually using
+        output.push_str(&format!("📂 Listing: {}\n", expanded.display()));
+        output.push_str("─".repeat(40).as_str());
+        output.push('\n');
+        
         if recursive {
-            for entry in walkdir::WalkDir::new(path).max_depth(10) {
-                let entry = entry?;
+            for entry in walkdir::WalkDir::new(&expanded).max_depth(10) {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("{}", self.get_error_context(path, &e.into())));
+                    }
+                };
                 let indent = "  ".repeat(entry.depth());
                 let name = entry.file_name().to_string_lossy();
                 let file_type = if entry.file_type().is_dir() {
@@ -52,7 +119,12 @@ impl FileSystemTool {
                 output.push_str(&format!("{}{} {}\n", indent, file_type, name));
             }
         } else {
-            let entries = std::fs::read_dir(path)?;
+            let entries = match std::fs::read_dir(&expanded) {
+                Ok(e) => e,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("{}", self.get_error_context(path, &e)));
+                }
+            };
             for entry in entries {
                 let entry = entry?;
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -73,18 +145,20 @@ impl FileSystemTool {
             }
         }
 
-        if output.is_empty() {
-            output = "(empty directory)".to_string();
+        if output.trim().lines().count() <= 2 {
+            output.push_str("(empty directory)\n");
         }
 
         Ok(output)
     }
 
     fn get_file_info(&self, path: &str) -> anyhow::Result<String> {
-        let metadata = std::fs::metadata(path)?;
-        let path_obj = Path::new(path);
+        let expanded = self.expand_path(path);
+        let metadata = std::fs::metadata(&expanded).map_err(|e| {
+            anyhow::anyhow!("{}", self.get_error_context(path, &e))
+        })?;
         
-        let mut info = format!("Path: {}\n", path);
+        let mut info = format!("Path: {} (expanded: {})\n", path, expanded.display());
         info.push_str(&format!("Type: {}\n", 
             if metadata.is_dir() { "Directory" } 
             else if metadata.is_file() { "File" } 
@@ -104,7 +178,7 @@ impl FileSystemTool {
 
         // If it's a file, count lines and words
         if metadata.is_file() {
-            if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(content) = std::fs::read_to_string(&expanded) {
                 let lines = content.lines().count();
                 let words = content.split_whitespace().count();
                 info.push_str(&format!("Lines: {}\n", lines));
@@ -123,11 +197,13 @@ impl Tool for FileSystemTool {
     }
 
     fn description(&self) -> &str {
-        "Read, write, and manage files. Use this when you need to:\n\
+        "Read, write, and manage files. Supports ~ home directory expansion. \
+        Use this when you need to:\n\
         - Read file contents to understand code, configs, or documents\n\
         - Write or edit files to save results, configs, or scripts\n\
         - List directories to explore project structure\n\
-        Operations: read, write, append, list_dir, file_info"
+        Operations: read, write, append, list_dir, file_info\n\
+        WINDOWS USERS: Use backslashes (C:\\Users\\name\\Documents) or forward slashes (C:/Users/name/Documents)"
     }
 
     fn parameters_schema(&self) -> Value {

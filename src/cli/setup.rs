@@ -322,6 +322,7 @@ impl SetupWizard {
         match section {
             "llm" => self.quick_setup_llm().await,
             "images" => self.quick_setup_images().await,
+            "vision" => self.quick_setup_vision().await,
             "telegram" => self.quick_setup_telegram().await,
             "show" => {
                 let config = Config::load().unwrap_or_default();
@@ -335,11 +336,15 @@ impl SetupWizard {
                 println!("  api_key  = {}", mask_key(config.images.api_key.as_deref().unwrap_or("")));
                 println!("\n[telegram]");
                 println!("  bot_token = {}", mask_key(config.telegram.bot_token.as_deref().unwrap_or("")));
+                println!("\n[vision]");
+                println!("  provider = {}", config.vision.provider.as_deref().unwrap_or("not set"));
+                println!("  model    = {}", config.vision.model.as_deref().unwrap_or("not set"));
+                println!("  api_key  = {}", mask_key(config.vision.api_key.as_deref().unwrap_or("")));
                 println!();
                 Ok(())
             }
             _ => {
-                println!("Unknown section '{}'. Try: llm, images, telegram, show", section);
+                println!("Unknown section '{}'. Try: llm, images, vision, telegram, show", section);
                 Ok(())
             }
         }
@@ -474,6 +479,69 @@ impl SetupWizard {
         
         config.save()?;
         println!("\n✅ Telegram configuration saved");
+        Ok(())
+    }
+    
+    /// Quick vision/AI image analysis setup
+    async fn quick_setup_vision(&self) -> Result<()> {
+        use horcrux::config::Config;
+        let mut config = Config::load().unwrap_or_default();
+        
+        println!("\n🖼️  Vision (AI Image Analysis) Setup\n");
+        println!("Analyze images using AI - describe contents, read text (OCR), identify objects.\n");
+        
+        println!("Select provider:");
+        println!("  1. OpenAI GPT-4o Vision (recommended)");
+        println!("  2. Anthropic Claude Vision");
+        println!("  3. Ollama (local - no API key needed)");
+        println!("  4. Skip vision setup");
+        
+        let current = config.vision.provider.as_deref().unwrap_or("");
+        print!("Choice (current: {}): ", current);
+        std::io::stdout().flush()?;
+        let mut choice = String::new();
+        std::io::stdin().read_line(&mut choice)?;
+        
+        if !choice.trim().is_empty() {
+            match choice.trim() {
+                "1" => {
+                    config.vision.provider = Some("openai".to_string());
+                    config.vision.model = Some("gpt-4o".to_string());
+                }
+                "2" => {
+                    config.vision.provider = Some("anthropic".to_string());
+                    config.vision.model = Some("claude-3-opus-20240229".to_string());
+                }
+                "3" => {
+                    config.vision.provider = Some("ollama".to_string());
+                    config.vision.model = Some("llava".to_string());
+                    println!("\n⚠️  Make sure Ollama is running with a vision model like 'llava'");
+                }
+                "4" => {
+                    println!("\nSkipped vision setup.");
+                    return Ok(());
+                }
+                _ => {
+                    config.vision.provider = Some(choice.trim().to_string());
+                }
+            }
+        }
+        
+        // Only ask for API key if not Ollama
+        let is_ollama = config.vision.provider.as_deref() == Some("ollama");
+        if !is_ollama {
+            let masked = mask_key(config.vision.api_key.as_deref().unwrap_or(""));
+            print!("API Key (current: {}): ", masked);
+            std::io::stdout().flush()?;
+            let mut key = String::new();
+            std::io::stdin().read_line(&mut key)?;
+            if !key.trim().is_empty() {
+                config.vision.api_key = Some(key.trim().to_string());
+            }
+        }
+        
+        config.save()?;
+        println!("\n✅ Vision configuration saved to ~/.horcrux/config.toml");
         Ok(())
     }
     

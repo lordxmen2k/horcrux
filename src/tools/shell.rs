@@ -157,6 +157,26 @@ impl Tool for ShellTool {
         let timeout = args["timeout"].as_u64().unwrap_or(60);
         let confirmation = args["confirmation"].as_str();
         
+        // Platform-specific warnings
+        let is_windows = cfg!(windows);
+        let has_unix_specific = command.contains("find ~") || command.contains("ls -") || 
+                               command.contains("grep ") || command.contains("| head") ||
+                               command.contains("2>/dev/null");
+        
+        if is_windows && has_unix_specific {
+            return Ok(ToolResult::error(format!(
+                "⚠️ This command uses Unix-specific syntax that won't work on Windows:\n\n\
+                ```\n{}\n```\n\n\
+                On Windows, use PowerShell equivalents:\n\
+                - Instead of 'find ~', use: Get-ChildItem -Path $env:USERPROFILE -Recurse\n\
+                - Instead of 'ls -lh', use: Get-ChildItem | Select-Object Name, Length\n\
+                - Instead of 'grep', use: Select-String\n\
+                - Instead of '| head -N', use: | Select-Object -First N\n\n\
+                Please rewrite the command for Windows PowerShell.",
+                command
+            )));
+        }
+        
         // Check for blocked commands
         if let Some(blocked) = self.is_blocked(command) {
             return Ok(ToolResult::error(format!(
@@ -185,7 +205,16 @@ impl Tool for ShellTool {
                 let mut output = String::new();
                 
                 if !result.success {
-                    output.push_str(&format!("⚠️ Command exited with code {}\n\n", result.exit_code));
+                    output.push_str(&format!("⚠️ Command failed with exit code {}\n\n", result.exit_code));
+                    
+                    // Common error explanations
+                    if result.exit_code == 1 {
+                        output.push_str("(Exit code 1 usually means the command itself reported an error)\n\n");
+                    } else if result.exit_code == 127 || result.stderr.contains("not found") {
+                        output.push_str("❌ Command not found. The program may not be installed or not in PATH.\n\n");
+                        output.push_str(&format!("Platform: {}\n", if cfg!(windows) { "Windows" } else { "Unix/Linux" }));
+                        output.push_str("Tip: On Windows, use PowerShell commands instead of Unix commands.\n\n");
+                    }
                 }
                 
                 if !result.stdout.is_empty() {
@@ -212,9 +241,15 @@ impl Tool for ShellTool {
             }
             Err(e) => {
                 Ok(ToolResult::error(format!(
-                    "Failed to execute command: {}\n\n\
-                    Make sure the command exists and you have permission to run it.",
-                    e
+                    "❌ Failed to execute command: {}\n\n\
+                    Possible causes:\n\
+                    1. The command doesn't exist on this system\n\
+                    2. You're using Unix commands on Windows (or vice versa)\n\
+                    3. Missing permissions\n\n\
+                    Current platform: {}\n\
+                    Tip: Check if the command works in your terminal first.",
+                    e,
+                    if cfg!(windows) { "Windows" } else { "Unix/Linux" }
                 )))
             }
         }

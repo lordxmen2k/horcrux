@@ -94,9 +94,44 @@ impl Agent {
         })
     }
 
+    /// Create agent with a pre-configured telegram tool (for TelegramAgentBot)
+    pub fn new_with_telegram(
+        config: AgentConfig,
+        telegram_tool: crate::tools::telegram::TelegramTool,
+    ) -> Result<Self> {
+        let llm = LlmClient::new(config.llm_config.clone());
+        
+        if !llm.is_available() {
+            anyhow::bail!(
+                "LLM not configured. Set one of:\n\
+                - HORCRUX_LLM_URL + HORCRUX_LLM_MODEL (for Ollama)\n\
+                - OPENAI_API_KEY (for OpenAI)"
+            );
+        }
+
+        let mut tools = ToolRegistry::default_with_db(config.db_path.clone());
+        // Replace the default telegram tool with the one that has live bot injected
+        tools.register(std::sync::Arc::new(telegram_tool));
+        
+        let memory = ConversationMemory::new(config.db_path.clone(), config.session_id.clone());
+        let react_agent = ReActAgent::new(llm, tools, memory);
+
+        info!("Agent initialized with custom telegram tool, session ID: {}", config.session_id);
+
+        Ok(Self {
+            react_agent,
+            config,
+        })
+    }
+
     /// Run the agent with a single user input
     pub async fn run(&mut self, input: &str) -> Result<String> {
         self.react_agent.run(input).await
+    }
+    
+    /// Run with context (e.g., chat_id for Telegram)
+    pub async fn run_with_context(&mut self, input: &str, context: std::collections::HashMap<String, String>) -> Result<String> {
+        self.react_agent.run_with_context(input, context).await
     }
 
     /// Run in interactive mode (with status updates)
@@ -112,6 +147,11 @@ impl Agent {
     /// Clear conversation history
     pub async fn clear_history(&mut self) -> Result<()> {
         self.react_agent.clear_history().await
+    }
+
+    /// Extract pending Telegram file sends from the conversation history
+    pub async fn extract_pending_telegram_sends(&self) -> Vec<(String, Option<String>)> {
+        self.react_agent.extract_pending_telegram_sends().await
     }
 }
 

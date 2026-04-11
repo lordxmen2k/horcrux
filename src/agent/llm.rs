@@ -56,8 +56,16 @@ pub struct ChatMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "should_skip_tool_call_id")]
     pub tool_call_id: Option<String>,
+}
+
+/// Skip tool_call_id if None OR empty string
+fn should_skip_tool_call_id(value: &Option<String>) -> bool {
+    match value {
+        None => true,
+        Some(s) => s.is_empty(),
+    }
 }
 
 impl ChatMessage {
@@ -98,11 +106,13 @@ impl ChatMessage {
     }
 
     pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        let id: String = tool_call_id.into();
         Self {
             role: "tool".into(),
             content: content.into(),
             tool_calls: None,
-            tool_call_id: Some(tool_call_id.into()),
+            // Only set tool_call_id if it's not empty - prevents API errors
+            tool_call_id: if id.is_empty() { None } else { Some(id) },
         }
     }
 }
@@ -246,9 +256,38 @@ impl LlmClient {
             None
         };
 
+        // AGGRESSIVE FILTER: Remove any tool messages with empty/missing tool_call_id
+        // This prevents API errors like "tool_call_id  is not found"
+        let filtered_messages: Vec<ChatMessage> = messages.iter().filter(|msg| {
+            if msg.role == "tool" {
+                let has_valid_id = msg.tool_call_id.as_ref()
+                    .map(|id| !id.is_empty())
+                    .unwrap_or(false);
+                if !has_valid_id {
+                    eprintln!("⚠️ FILTERED OUT tool message with empty tool_call_id before API call");
+                }
+                has_valid_id
+            } else {
+                true
+            }
+        }).cloned().collect();
+        
+        // DEBUG: Verify no empty tool_call_id remains
+        for (i, msg) in filtered_messages.iter().enumerate() {
+            if msg.role == "tool" {
+                let id_preview = msg.tool_call_id.as_ref()
+                    .map(|s| if s.len() > 20 { format!("{}...", &s[..20]) } else { s.clone() })
+                    .unwrap_or_else(|| "<NONE>".to_string());
+                eprintln!("  [API] Message {}: role=tool, tool_call_id={}", i, id_preview);
+            }
+        }
+
+        // DEBUG: Check message count before moving
+        let msg_count = filtered_messages.len();
+        
         let request = ChatRequest {
             model: self.config.model.clone(),
-            messages: messages.to_vec(),
+            messages: filtered_messages,
             tools: tools_value,
             tool_choice: tool_choice.clone(),
             max_tokens: self.config.max_tokens,
@@ -257,8 +296,22 @@ impl LlmClient {
             thinking: Some(ThinkingConfig { kind: "disabled".to_string() }), // Disable thinking
         };
         
-
-
+        // DEBUG: Print JSON when we have many messages (error condition)
+        if msg_count > 10 {
+            match serde_json::to_string(&request) {
+                Ok(json) => {
+                    // Check for empty tool_call_id in the actual JSON
+                    let empty_count = json.matches("\"tool_call_id\":\"\"").count();
+                    let null_count = json.matches("\"tool_call_id\":null").count();
+                    if empty_count > 0 || null_count > 0 {
+                        eprintln!("🐛 CRITICAL: Found {} empty and {} null tool_call_id in JSON!", empty_count, null_count);
+                        eprintln!("🐛 JSON (first 4000 chars): {}", &json[..json.len().min(4000)]);
+                    }
+                }
+                Err(e) => eprintln!("🐛 Failed to serialize: {}", e),
+            }
+        }
+        
         // Make request with retry logic for 429 rate limiting
         let mut retries = 0;
         let max_retries = 3;

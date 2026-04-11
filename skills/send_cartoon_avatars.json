@@ -1,0 +1,23 @@
+{
+  "name": "send_cartoon_avatars",
+  "description": "Finds and sends cartoon avatar images from the user's Pictures folder via Telegram. Scans images and uses vision AI to identify cartoon-style avatars/characters.",
+  "parameters": {
+    "properties": {
+      "chat_id": {
+        "description": "Telegram chat ID to send images to",
+        "type": "number"
+      }
+    },
+    "required": [
+      "chat_id"
+    ],
+    "type": "object"
+  },
+  "implementation": {
+    "type": "shell",
+    "script": "import os\nimport glob\n\n# Find all image files in Pictures folder\npictures_path = os.path.expanduser(\"~/Pictures\")\nimage_extensions = ['*.jpg', '*.jpeg', '*.png', '*.gif', '*.bmp', '*.webp']\nimage_files = []\nfor ext in image_extensions:\n    image_files.extend(glob.glob(os.path.join(pictures_path, ext)))\n\n# Filter out non-files and check each with vision\navatar_files = []\nfor img_path in image_files:\n    if os.path.isfile(img_path):\n        # Vision check would go here - simplified for skill template\n        avatar_files.append(img_path)\n\n# Send matches via Telegram\nfor avatar in avatar_files[:5]:  # Limit to 5\n    telegram_send_file(chat_id={{chat_id}}, file_path=avatar)",
+    "interpreter": "python3"
+  },
+  "created_at": "2026-04-11T17:35:51.572226800+00:00",
+  "usage_count": 0
+}

@@ -1,0 +1,15 @@
+{
+  "name": "workflow_pictures_that_look_like_a_cart",
+  "description": "Auto-generated workflow for: Pictures that look like a cartoon avatar in that folder",
+  "parameters": {
+    "properties": {},
+    "type": "object"
+  },
+  "implementation": {
+    "type": "shell",
+    "script": "#!/bin/bash\n# Workflow for: Pictures that look like a cartoon avatar in that folder\n# Auto-generated after 6 tool calls\n#\n# Steps:\n# 1. Use filesystem to find relevant files\n# 2. Use vision to verify/analyze images\n# 3. Use telegram to send files to user\n#\necho 'Workflow: Pictures that look like a cartoon avatar in that folder'\necho 'Use tools: filesystem, vision, telegram'\n",
+    "interpreter": "bash"
+  },
+  "created_at": "2026-04-11T17:49:54.202532300+00:00",
+  "usage_count": 0
+}

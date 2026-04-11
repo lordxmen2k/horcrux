@@ -139,6 +139,43 @@ impl TelegramBot {
             Err(anyhow::anyhow!("Bot not initialized. Set TELEGRAM_BOT_TOKEN environment variable."))
         }
     }
+    
+    async fn send_file(&self, chat_id: i64, file_path: &str, caption: Option<&str>) -> anyhow::Result<String> {
+        if let Some(ref bot) = self.bot {
+            use teloxide::types::InputFile;
+            
+            let path = std::path::Path::new(file_path);
+            if !path.exists() {
+                return Err(anyhow::anyhow!("File not found: {}", file_path));
+            }
+            
+            // Determine if it's an image or document
+            let is_image = matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp")
+            );
+            
+            if is_image {
+                // Send as photo
+                let mut photo = bot.send_photo(ChatId(chat_id), InputFile::file(file_path));
+                if let Some(cap) = caption {
+                    photo = photo.caption(cap);
+                }
+                photo.await?;
+                Ok(format!("Image sent to chat {}", chat_id))
+            } else {
+                // Send as document
+                let mut doc = bot.send_document(ChatId(chat_id), InputFile::file(file_path));
+                if let Some(cap) = caption {
+                    doc = doc.caption(cap);
+                }
+                doc.await?;
+                Ok(format!("File sent to chat {}", chat_id))
+            }
+        } else {
+            Err(anyhow::anyhow!("Bot not initialized. Set TELEGRAM_BOT_TOKEN environment variable."))
+        }
+    }
 
     async fn start_bot(&mut self) -> anyhow::Result<String> {
         let token = Self::get_token_from_env()
@@ -227,12 +264,23 @@ impl TelegramBot {
 
 pub struct TelegramTool {
     bot: Arc<Mutex<TelegramBot>>,
+    /// Shared live bot instance injected from TelegramAgentBot dispatcher
+    live_bot: Arc<Mutex<Option<Bot>>>,
 }
 
 impl TelegramTool {
     pub fn new() -> Self {
         Self {
             bot: Arc::new(Mutex::new(TelegramBot::new())),
+            live_bot: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Called by TelegramAgentBot after it creates its Bot instance
+    pub fn inject_live_bot(live_bot: Arc<Mutex<Option<Bot>>>) -> Self {
+        Self {
+            bot: Arc::new(Mutex::new(TelegramBot::new())),
+            live_bot,
         }
     }
 }
@@ -244,9 +292,10 @@ impl Tool for TelegramTool {
     }
 
     fn description(&self) -> &str {
-        "Send and receive messages via Telegram bot. \
+        "Send messages and files via Telegram bot. \
          Use this to communicate with users through Telegram. \
-         Operations: start_bot, stop_bot, send_message, get_messages"
+         Can send text messages, images, and documents. \
+         Operations: start_bot, stop_bot, send_message, send_file, get_messages"
     }
 
     fn parameters_schema(&self) -> Value {
@@ -255,18 +304,24 @@ impl Tool for TelegramTool {
             "properties": {
                 "operation": {
                     "type": "string",
-                    "enum": ["start_bot", "stop_bot", "send_message", "get_messages"],
+                    "enum": ["start_bot", "stop_bot", "send_message", "send_file", "get_messages"],
                     "description": "The Telegram operation to perform"
                 },
                 "chat_id": {
                     "type": "integer",
-                    "description": "Telegram chat ID (for send_message)",
-                    "optional": true
+                    "description": "Telegram chat ID (for send_message, send_file)",
                 },
                 "message": {
                     "type": "string",
                     "description": "Message text to send (for send_message)",
-                    "optional": true
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to file to send (for send_file). Images (jpg, png, gif) send as photos, others as documents",
+                },
+                "caption": {
+                    "type": "string",
+                    "description": "Optional caption for file (for send_file)",
                 }
             },
             "required": ["operation"]
@@ -299,6 +354,47 @@ impl Tool for TelegramTool {
                     Err(e) => ToolResult::error(format!("Failed to send message: {}", e)),
                 }
             }
+            "send_file" => {
+                let chat_id = args["chat_id"].as_i64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing chat_id"))?;
+                let file_path = args["file_path"].as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing file_path"))?;
+                let caption = args["caption"].as_str();
+
+                // Try injected live bot first (used when running as TelegramAgentBot)
+                let live = self.live_bot.lock().await;
+                if let Some(live_bot) = live.clone() {
+                    drop(live); // release lock before async work
+                    let path = std::path::Path::new(file_path);
+                    if !path.exists() {
+                        return Ok(ToolResult::error(format!("File not found: {}", file_path)));
+                    }
+                    let is_image = matches!(
+                        path.extension().and_then(|e| e.to_str()),
+                        Some("jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp")
+                    );
+                    let result = if is_image {
+                        let mut req = live_bot.send_photo(ChatId(chat_id), InputFile::file(file_path));
+                        if let Some(cap) = caption { req = req.caption(cap); }
+                        req.await.map(|_| format!("✅ Image sent to chat {}", chat_id))
+                    } else {
+                        let mut req = live_bot.send_document(ChatId(chat_id), InputFile::file(file_path));
+                        if let Some(cap) = caption { req = req.caption(cap); }
+                        req.await.map(|_| format!("✅ File sent to chat {}", chat_id))
+                    };
+                    return Ok(match result {
+                        Ok(msg) => ToolResult::success(msg),
+                        Err(e) => ToolResult::error(format!("Failed to send file: {}", e)),
+                    });
+                }
+                drop(live);
+
+                // Fall back to managed bot (used in standalone tool mode)
+                match bot.send_file(chat_id, file_path, caption).await {
+                    Ok(msg) => ToolResult::success(msg),
+                    Err(e) => ToolResult::error(format!("Failed to send file: {}", e)),
+                }
+            }
             "get_messages" => {
                 let messages = bot.get_pending_messages().await;
                 if messages.is_empty() {
@@ -326,6 +422,7 @@ impl Tool for TelegramTool {
 pub struct TelegramAgentBot {
     agent_config: crate::agent::AgentConfig,
     agents: Arc<Mutex<HashMap<i64, crate::agent::Agent>>>,
+    shared_bot: Arc<Mutex<Option<Bot>>>,
 }
 
 impl TelegramAgentBot {
@@ -334,6 +431,7 @@ impl TelegramAgentBot {
         Self {
             agent_config: config,
             agents: Arc::new(Mutex::new(HashMap::new())),
+            shared_bot: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -344,18 +442,23 @@ impl TelegramAgentBot {
         let bot = Bot::new(token);
         let me = bot.get_me().await?;
         
+        // Share the live bot with TelegramTool
+        *self.shared_bot.lock().await = Some(bot.clone());
+        
         println!("🤖 Telegram Agent Bot started!");
         println!("Bot: @{}", me.username.clone().unwrap_or_default());
         println!("Waiting for messages...\n");
 
         let db_path = self.agent_config.db_path.clone();
         let agents = self.agents.clone();
+        let shared_bot = self.shared_bot.clone();
 
         let handler = dptree::entry()
             .branch(Update::filter_message().endpoint(
                 move |bot: Bot, msg: Message| {
                     let db_path = db_path.clone();
                     let agents = agents.clone();
+                    let shared_bot = shared_bot.clone();
                     
                     async move {
                         if let Some(text) = msg.text() {
@@ -381,7 +484,9 @@ impl TelegramAgentBot {
                             let mut agents_lock = agents.lock().await;
                             let agent = agents_lock.entry(chat_id.0).or_insert_with(|| {
                                 let config = crate::agent::AgentConfig::new(db_path.clone());
-                                crate::agent::Agent::new(config).expect("Failed to create agent")
+                                let tg_tool = crate::tools::telegram::TelegramTool::inject_live_bot(shared_bot.clone());
+                                crate::agent::Agent::new_with_telegram(config, tg_tool)
+                                    .expect("Failed to create agent")
                             });
                             
                             // Spawn a task to keep sending typing indicator every 3 seconds
@@ -398,8 +503,12 @@ impl TelegramAgentBot {
                                 }
                             });
                             
-                            // Run the agent
-                            let response = agent.run(text).await;
+                            // Run the agent with context including chat_id
+                            let mut context = std::collections::HashMap::new();
+                            context.insert("platform".to_string(), "telegram".to_string());
+                            context.insert("chat_id".to_string(), chat_id.0.to_string());
+                            context.insert("username".to_string(), username.clone());
+                            let response = agent.run_with_context(text, context).await;
                             
                             // Stop the typing indicator task
                             typing_handle.abort();
@@ -413,6 +522,9 @@ impl TelegramAgentBot {
                             match response {
                                 Ok(response_text) => {
                                     println!("📝 Raw agent response ({} chars): {:?}", response_text.len(), &response_text[..response_text.len().min(200)]);
+                                    
+                                    // Note: File sending is now handled by the telegram tool directly
+                                    // (via the injected live bot), so we don't need to extract and send here
                                     
                                     // Sanitize to remove any leaked tool call JSON
                                     let response_text = sanitize_for_user(&response_text);

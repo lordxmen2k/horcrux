@@ -19,6 +19,9 @@ pub mod voice;
 pub mod web_search;
 pub mod skills_library;
 pub mod telegram;
+pub mod dependency_manager;
+pub mod code_executor;
+pub mod vision;
 
 pub use filesystem::FileSystemTool;
 pub use config_manager::ConfigManagerTool;
@@ -33,6 +36,9 @@ pub use web_search::WebSearchTool;
 pub use skills::{CreateSkillTool, ListSkillsTool, Skill, SkillImplementation, SkillManager, SkillTool};
 pub use skills_library::{find_similar_skill, get_builtin_skills};
 pub use telegram::{TelegramTool, TelegramAgentBot};
+pub use dependency_manager::DependencyManagerTool;
+pub use code_executor::CodeExecutorTool;
+pub use vision::VisionTool;
 
 /// A tool that can be called by the agent
 #[async_trait]
@@ -161,6 +167,15 @@ impl ToolRegistry {
         
         // Register voice transcription tool
         registry.register(Arc::new(VoiceTranscriptionTool::new()));
+        
+        // Register dependency manager tool for self-installing languages
+        registry.register(Arc::new(DependencyManagerTool::new()));
+        
+        // Register code executor for local code execution
+        registry.register(Arc::new(CodeExecutorTool::new()));
+        
+        // Register vision tool for image analysis
+        registry.register(Arc::new(VisionTool::new()));
         
         // Register Skills tools (create_skill, list_skills, etc.)
         // Try project directory first, then fall back to data dir

@@ -42,6 +42,10 @@ pub struct Config {
     /// Web search configuration
     #[serde(default)]
     pub web_search: WebSearchConfig,
+    
+    /// Vision/AI image analysis configuration
+    #[serde(default)]
+    pub vision: VisionConfig,
 }
 
 /// LLM configuration section
@@ -155,6 +159,34 @@ impl WebSearchConfig {
     /// Get provider name or default
     pub fn provider(&self) -> &str {
         self.provider.as_deref().unwrap_or("tavily")
+    }
+}
+
+/// Vision/AI image analysis configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VisionConfig {
+    /// Provider: "openai", "anthropic", or "ollama"
+    pub provider: Option<String>,
+    /// API key for the chosen provider (not needed for ollama)
+    pub api_key: Option<String>,
+    /// Model to use (optional, uses provider default if not set)
+    pub model: Option<String>,
+    /// Base URL for API (optional, uses provider default if not set)
+    pub base_url: Option<String>,
+}
+
+impl VisionConfig {
+    /// Check if vision is properly configured
+    pub fn is_configured(&self) -> bool {
+        let has_provider = self.provider.as_ref().map(|p| !p.is_empty()).unwrap_or(false);
+        let is_ollama = self.provider.as_deref().map(|p| p == "ollama").unwrap_or(false);
+        // Ollama doesn't need an API key, others do
+        has_provider && (is_ollama || self.api_key.as_ref().map(|k| !k.is_empty()).unwrap_or(false))
+    }
+    
+    /// Get provider name or default
+    pub fn provider(&self) -> &str {
+        self.provider.as_deref().unwrap_or("openai")
     }
 }
 

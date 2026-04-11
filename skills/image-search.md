@@ -3,7 +3,7 @@ name: image-search
 description: User explicitly wants to see images, photos, or pictures of something
 version: 1.0.0
 created: 2024-01-15
-uses: 0
+uses: 12
 last_used: 2024-01-15
 ---
 

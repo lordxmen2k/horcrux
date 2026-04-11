@@ -95,6 +95,12 @@ pub struct ReActAgent {
     memory: ConversationMemory,
     system_prompt: String,
     compaction_manager: CompactionManager,
+    /// Valid tool names for hallucination detection (hermes-agent pattern)
+    valid_tool_names: std::collections::HashSet<String>,
+    /// Track tool call count for auto-skill creation
+    tool_call_count: std::sync::atomic::AtomicUsize,
+    /// Track if skill was auto-created this session
+    skill_auto_created: std::sync::atomic::AtomicBool,
 }
 
 impl ReActAgent {
@@ -114,17 +120,34 @@ impl ReActAgent {
         };
         let compaction_manager = CompactionManager::new(compaction_config);
         
+        // Build valid tool names set for hallucination detection (hermes-agent pattern)
+        let valid_tool_names: std::collections::HashSet<String> = tools.list()
+            .iter()
+            .map(|t| t.name().to_string())
+            .collect();
+        
+        println!("🛠️  Loaded {} tools: {}", valid_tool_names.len(), 
+            valid_tool_names.iter().cloned().collect::<Vec<_>>().join(", "));
+        
         Self {
             llm,
             tools,
             memory,
             system_prompt,
             compaction_manager,
+            valid_tool_names,
+            tool_call_count: std::sync::atomic::AtomicUsize::new(0),
+            skill_auto_created: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     /// Run the agent on a user input
     pub async fn run(&mut self, user_input: &str) -> Result<String> {
+        self.run_with_context(user_input, std::collections::HashMap::new()).await
+    }
+    
+    /// Run with additional context (e.g., chat_id, platform info)
+    pub async fn run_with_context(&mut self, user_input: &str, context: std::collections::HashMap<String, String>) -> Result<String> {
         info!("Agent run started for input: {}", user_input);
         
         let input_lower = user_input.to_lowercase();
@@ -132,24 +155,51 @@ impl ReActAgent {
         // Create a local system prompt for this run (don't modify self.system_prompt permanently)
         let mut current_system_prompt = self.system_prompt.clone();
         
+        // Inject context into system prompt
+        if !context.is_empty() {
+            let context_str = context.iter()
+                .map(|(k, v)| format!("{}: {}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n");
+            current_system_prompt.push_str(&format!(
+                "\n\n## Current Session Context\n\
+                {}\n\n\
+                IMPORTANT: When using telegram send_file or send_message, \
+                always use the chat_id from context above. \
+                Never ask the user for their chat_id — you already have it.",
+                context_str
+            ));
+        }
+        
         // FIRST: Check for relevant skills - they override default behavior
         let skills_manager = crate::skills::SkillsManager::new();
         let relevant_skill = skills_manager.find_relevant_skill(user_input);
         let has_matching_skill = relevant_skill.is_some();
         
         if let Some(skill) = &relevant_skill {
-            info!("Found relevant skill: {}", skill.name);
-            println!("📚 Using skill: {}", skill.name);
-            // Inject skill content into system prompt (truncate if too long)
-            let skill_content = if skill.content.len() > 2000 {
-                format!("{}...(truncated)", &skill.content[..2000])
+            // Don't let image-search skill override local file-send requests
+            let is_local_send = input_lower.contains("send me")
+                || (input_lower.contains("my ") && (
+                    input_lower.contains("folder") 
+                    || input_lower.contains("in my ")
+                    || input_lower.contains("from my ")
+                ));
+            if skill.name.contains("image-search") && is_local_send {
+                println!("⚠️  Skipping skill '{}' — local file send, not a web image search", skill.name);
             } else {
-                skill.content.clone()
-            };
-            let skill_instruction = format!("\n\n⚡ FOLLOW THIS SKILL: {}\n{}\n\nSTRICTLY FOLLOW the Procedure above. Respect the 'What NOT to Do' section.",
-                skill.name, skill_content);
-            current_system_prompt.push_str(&skill_instruction);
-            println!("📝 Skill instruction added ({} chars)", skill_instruction.len());
+                info!("Found relevant skill: {}", skill.name);
+                println!("📚 Using skill: {}", skill.name);
+                // Inject skill content into system prompt (truncate if too long)
+                let skill_content = if skill.content.len() > 2000 {
+                    format!("{}...(truncated)", &skill.content[..2000])
+                } else {
+                    skill.content.clone()
+                };
+                let skill_instruction = format!("\n\n⚡ FOLLOW THIS SKILL: {}\n{}\n\nSTRICTLY FOLLOW the Procedure above. Respect the 'What NOT to Do' section.",
+                    skill.name, skill_content);
+                current_system_prompt.push_str(&skill_instruction);
+                println!("📝 Skill instruction added ({} chars)", skill_instruction.len());
+            }
         }
         
         // SECOND: Detect if user EXPLICITLY wants images
@@ -458,6 +508,7 @@ impl ReActAgent {
                 } else {
                     // This is a genuine final response
                     final_response = llm_response.content.clone();
+                    
                     println!("📝 Final response set ({} chars): {:?}", final_response.len(), &final_response[..final_response.len().min(100)]);
                     self.memory.add_assistant_message(&final_response, None).await?;
                     break;
@@ -639,6 +690,67 @@ impl ReActAgent {
                     }
                 } else {
                     consecutive_failures = 0; // Reset on success
+                    
+                    // AUTO-SKILL CREATION: If >5 tool calls and not yet created, save workflow as skill
+                    let count = self.tool_call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if count >= 5 && !self.skill_auto_created.load(std::sync::atomic::Ordering::SeqCst) {
+                        self.skill_auto_created.store(true, std::sync::atomic::Ordering::SeqCst);
+                        println!("🔧 Auto-creating skill after {} tool calls...", count + 1);
+                        
+                        // Get the original user input for skill naming
+                        let original_input = user_input.chars().take(30).collect::<String>();
+                        let skill_name = original_input.to_lowercase()
+                            .replace(" ", "_")
+                            .replace(|c: char| !c.is_alphanumeric() && c != '_', "");
+                        let skill_name = if skill_name.len() < 3 { 
+                            "auto_workflow".to_string() 
+                        } else { 
+                            format!("workflow_{}", skill_name) 
+                        };
+                        
+                        // Build skill code that documents the workflow
+                        let skill_code = format!(
+                            "#!/bin/bash\n\
+                            # Workflow for: {}\n\
+                            # Auto-generated after {} tool calls\n\
+                            #\n\
+                            # Steps:\n\
+                            # 1. Use filesystem to find relevant files\n\
+                            # 2. Use vision to verify/analyze images\n\
+                            # 3. Use telegram to send files to user\n\
+                            #\n\
+                            echo 'Workflow: {}'\n\
+                            echo 'Use tools: filesystem, vision, telegram'\n",
+                            user_input, count + 1, user_input
+                        );
+                        
+                        // Create the skill using create_skill tool with all required parameters
+                        let create_skill_call = ToolCall {
+                            id: format!("auto_skill_{}", rand::random::<u32>()),
+                            call_type: "function".to_string(),
+                            function: crate::agent::llm::FunctionCall {
+                                name: "create_skill".to_string(),
+                                arguments: serde_json::json!({
+                                    "name": skill_name,
+                                    "description": format!("Auto-generated workflow for: {}", user_input),
+                                    "type": "shell",
+                                    "code": skill_code
+                                }).to_string(),
+                            },
+                        };
+                        
+                        match self.execute_tool_call(&create_skill_call).await {
+                            Ok(result) if result.success => {
+                                println!("✅ Auto-created skill: {}", skill_name);
+                            }
+                            Ok(_) => {
+                                println!("⚠️  Skill creation returned non-success");
+                            }
+                            Err(e) => {
+                                println!("❌ Failed to auto-create skill: {}", e);
+                            }
+                        }
+                    }
                 }
 
                 // CRITICAL FIX: Handle parsed tool calls differently from native tool calls
@@ -749,24 +861,74 @@ impl ReActAgent {
         }
         
         // Check if compaction is needed
-        if self.compaction_manager.needs_compaction(&history) {
+        let history_to_add = if self.compaction_manager.needs_compaction(&history) {
             info!("Conversation history large ({} messages), compacting...", history.len());
             match self.compaction_manager.compact(&history).await {
                 Ok(compacted) => {
                     info!("Compacted to {} messages", compacted.len());
-                    messages.extend(compacted);
+                    compacted
                 }
                 Err(e) => {
                     warn!("Failed to compact conversation: {}, using last 10 messages", e);
                     // Fallback: just use last 10 messages
-                    let recent = history.iter().rev().take(10).rev().cloned().collect::<Vec<_>>();
-                    messages.extend(recent);
+                    history.iter().rev().take(10).rev().cloned().collect::<Vec<_>>()
                 }
             }
         } else {
-            messages.extend(history);
-        }
+            history
+        };
         
+        // First pass: identify all valid tool_call_ids from tool messages
+        let valid_tool_call_ids: std::collections::HashSet<String> = history_to_add.iter()
+            .filter(|msg| msg.role == "tool")
+            .filter_map(|msg| msg.tool_call_id.as_ref())
+            .filter(|id| !id.is_empty())
+            .cloned()
+            .collect();
+        
+        // Second pass: filter and fix messages
+        let filtered: Vec<ChatMessage> = history_to_add.into_iter().filter(|msg| {
+            // Filter out tool messages with empty/missing tool_call_id
+            if msg.role == "tool" {
+                let has_id = msg.tool_call_id.as_ref().map(|id| !id.is_empty()).unwrap_or(false);
+                if !has_id {
+                    println!("⚠️ Filtering out tool message with empty/missing tool_call_id");
+                }
+                has_id
+            } else {
+                true
+            }
+        }).map(|msg| {
+            // For assistant messages, remove tool_calls that reference missing tool results
+            if msg.role == "assistant" && msg.tool_calls.is_some() {
+                let original_tool_calls = msg.tool_calls.as_ref().unwrap();
+                let filtered_tool_calls: Vec<super::llm::ToolCall> = original_tool_calls
+                    .iter()
+                    .filter(|tc| valid_tool_call_ids.contains(&tc.id))
+                    .cloned()
+                    .collect();
+                if filtered_tool_calls.len() != original_tool_calls.len() {
+                    println!("⚠️ Removed {} orphaned tool_calls from assistant message (had {}, keeping {})", 
+                        original_tool_calls.len() - filtered_tool_calls.len(),
+                        original_tool_calls.len(),
+                        filtered_tool_calls.len());
+                    for tc in original_tool_calls {
+                        if !valid_tool_call_ids.contains(&tc.id) {
+                            println!("    - Removed orphaned call: {}", tc.id);
+                        }
+                    }
+                }
+                if filtered_tool_calls.is_empty() {
+                    super::llm::ChatMessage::assistant(&msg.content)
+                } else {
+                    super::llm::ChatMessage::assistant_with_tools(&msg.content, filtered_tool_calls)
+                }
+            } else {
+                msg
+            }
+        }).collect();
+        
+        messages.extend(filtered);
         Ok(messages)
     }
     
@@ -819,25 +981,86 @@ PREVIOUS CONTEXT (summarized): {}",
         }
     }
 
-    /// Execute a single tool call
+    /// Hermes-agent pattern: Attempt to repair a mismatched tool name
+    fn repair_tool_call(&self, tool_name: &str) -> Option<String> {
+        // 1. Try lowercase
+        let lowered = tool_name.to_lowercase();
+        if self.valid_tool_names.contains(&lowered) {
+            return Some(lowered);
+        }
+        
+        // 2. Try normalized (lowercase + hyphens/spaces -> underscores)
+        let normalized = lowered.replace("-", "_").replace(" ", "_");
+        if self.valid_tool_names.contains(&normalized) {
+            return Some(normalized);
+        }
+        
+        // 3. Try fuzzy match (find closest match with >70% similarity)
+        let mut best_match: Option<(String, f64)> = None;
+        for valid_name in &self.valid_tool_names {
+            let similarity = strsim::jaro_winkler(&lowered, &valid_name.to_lowercase());
+            if similarity >= 0.7 {
+                if best_match.is_none() || similarity > best_match.as_ref().unwrap().1 {
+                    best_match = Some((valid_name.clone(), similarity));
+                }
+            }
+        }
+        
+        best_match.map(|(name, _)| name)
+    }
+    
+    /// Hermes-agent pattern: Validate tool call before execution
+    fn validate_tool_call(&self, tool_call: &ToolCall) -> Result<String, String> {
+        let tool_name = &tool_call.function.name;
+        
+        // Check if tool exists
+        if self.valid_tool_names.contains(tool_name) {
+            return Ok(tool_name.clone());
+        }
+        
+        // Try to repair
+        if let Some(repaired) = self.repair_tool_call(tool_name) {
+            println!("🔧 Auto-repaired tool name: '{}' -> '{}'", tool_name, repaired);
+            return Ok(repaired);
+        }
+        
+        // Invalid tool - return error for model self-correction
+        let available = self.valid_tool_names.iter().cloned().collect::<Vec<_>>().join(", ");
+        Err(format!(
+            "Tool '{}' does not exist. Available tools: {}. Use one of the available tools.",
+            tool_name, available
+        ))
+    }
+
+    /// Execute a single tool call with validation (hermes-agent pattern)
     async fn execute_tool_call(&self, tool_call: &ToolCall) -> Result<ToolResult> {
         let tool_name = &tool_call.function.name;
         let tool_args: Value = serde_json::from_str(&tool_call.function.arguments)
             .unwrap_or_else(|_| serde_json::json!({}));
 
-        info!("Executing tool: {} with args: {}", tool_name, tool_call.function.arguments);
+        // Validate and potentially repair tool name (hermes-agent pattern)
+        let validated_name = match self.validate_tool_call(tool_call) {
+            Ok(name) => name,
+            Err(err) => {
+                println!("⚠️  Invalid tool call: {}", err);
+                return Ok(ToolResult::error(err));
+            }
+        };
 
-        match self.tools.get(tool_name) {
+        info!("Executing tool: {} (original: {}) with args: {}", validated_name, tool_name, tool_call.function.arguments);
+
+        match self.tools.get(&validated_name) {
             Some(tool) => {
                 let result = tool.execute(tool_args).await;
                 match &result {
-                    Ok(r) => debug!("Tool {} completed: success={}", tool_name, r.success),
-                    Err(e) => warn!("Tool {} failed: {}", tool_name, e),
+                    Ok(r) => debug!("Tool {} completed: success={}", validated_name, r.success),
+                    Err(e) => warn!("Tool {} failed: {}", validated_name, e),
                 }
                 result
             }
             None => {
-                let err = format!("Tool '{}' not found", tool_name);
+                // This shouldn't happen if validation passed, but handle it anyway
+                let err = format!("Tool '{}' not found (validation passed but tool missing)", validated_name);
                 warn!("{}", err);
                 Ok(ToolResult::error(err))
             }
@@ -852,6 +1075,47 @@ PREVIOUS CONTEXT (summarized): {}",
     /// Clear the conversation history
     pub async fn clear_history(&mut self) -> Result<()> {
         self.memory.clear().await
+    }
+
+    /// Extract pending Telegram file sends from recent assistant messages
+    /// Returns Vec of (file_path, caption) for files that need to be sent
+    /// Looks at ALL recent assistant messages, not just the last one
+    pub async fn extract_pending_telegram_sends(&self) -> Vec<(String, Option<String>)> {
+        let mut sends = Vec::new();
+        let mut seen_paths = std::collections::HashSet::new();
+        
+        // Get recent messages
+        if let Ok(messages) = self.memory.get_messages(20).await {
+            // Find ALL assistant messages with tool calls (not just the last one)
+            for msg in messages.iter().rev() {
+                if msg.role == "assistant" {
+                    if let Some(ref tool_calls) = msg.tool_calls {
+                        // tool_calls is already Vec<ToolCall>, no need to parse
+                        for call in tool_calls {
+                            if call.function.name == "telegram" {
+                                if let Ok(args) = serde_json::from_str::<serde_json::Value>(&call.function.arguments) {
+                                    if args.get("operation").and_then(|v| v.as_str()) == Some("send_file") {
+                                        if let Some(file_path) = args.get("file_path").and_then(|v| v.as_str()) {
+                                            // Deduplicate - only add if we haven't seen this path
+                                            if !seen_paths.contains(file_path) {
+                                                seen_paths.insert(file_path.to_string());
+                                                let caption = args.get("caption").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                                sends.push((file_path.to_string(), caption));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Don't break - check ALL assistant messages for file sends
+                }
+            }
+        }
+        
+        // Reverse to maintain original order (we iterated in reverse)
+        sends.reverse();
+        sends
     }
 }
 
@@ -1024,12 +1288,66 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
            - Then use it right away\n\n"
     );
 
+    prompt.push_str("LOCAL FILE FIND + SEND WORKFLOW (Telegram):\n\
+        When user says 'send me my X' or 'find my X files' on Telegram:\n\
+        **MUST DO STEP 1 - CLARIFICATION IS REQUIRED:**\n\
+        1. STOP and CLARIFY first: If 'X' is ambiguous (e.g. 'avatar' = profile pic? AI art? game avatar?)\n\
+           YOU MUST ASK: 'Do you mean (a) profile/avatar photos, (b) AI-generated character images, (c) something else?'\n\
+           **DO NOT PROCEED to filesystem/vision tools until user clarifies!**\n\
+           WRONG: Immediately using filesystem → vision → telegram\n\
+           CORRECT: Ask clarification question → wait for reply → then proceed\n\
+        2. FIND: Only after clarification, use filesystem to list C:\\\\Users\\\\<username>\\\\Pictures\n\
+        3. CHECK ALL IMAGES with vision: For EACH image file found, call:\n\
+           vision { image_path: '<full_path>', prompt: 'Does this look like a <what user wants>? Reply ONLY: YES or NO' }\n\
+           YOU MUST run vision on ALL image files, not just one!\n\
+           WAIT for ALL vision results before proceeding to step 4.\n\
+        4. ANALYZE and FILTER - CRITICAL STEP:\n\
+           After ALL vision calls complete, read each response carefully:\n\
+           - If response says 'YES' → ADD to send list\n\
+           - If response says 'NO' or contains 'no', 'not' → DO NOT ADD\n\
+           **MANDATORY: Create a definitive YES list and NO list**\n\
+           EXAMPLE after checking 4 images:\n\
+           - 3362910.jpg: NO (not a cartoon avatar)\n\
+           - ComfyUI_00013_Lilithyn.png: NO (fantasy artwork, not cartoon)\n\
+           - dotxbox 1.png: YES (cartoon avatar)\n\
+           - dotxbox.png: YES (cartoon avatar)\n\
+           → Send ONLY dotxbox 1.png and dotxbox.png (2 files)\n\
+           → DO NOT send 3362910.jpg or ComfyUI_00013_Lilithyn.png\n\
+        5. SEND via telegram (ONLY from YES list):\n\
+           For EACH file in your YES list:\n\
+           telegram { operation: 'send_file', chat_id: <from context>, file_path: '<confirmed path>', caption: '<filename>' }\n\
+           WRONG: Sending all 4 files including NO matches\n\
+           CORRECT: Sending only the 2 YES matches\n\
+           Use the chat_id from ## Current Session Context.\n\
+        6. CREATE SKILL after success:\n\
+           create_skill { name: 'send_<X>_files', type: 'shell', code: '...' }\n\
+           Tell user: 'Done! I also saved this as a skill for next time.'\n\n\
+        CRITICAL RULES:\n\
+        - Step 1: Always clarify ambiguous terms first\n\
+        - Step 3: MUST check ALL images with vision before proceeding\n\
+        - Step 4: MUST analyze vision results and filter - ONLY send YES matches\n\
+        - Step 5: Send files via telegram ONLY for images in YES list\n\
+        FAILURE EXAMPLE: Sending ComfyUI_00013_Lilithyn.png after vision said NO\n\
+        SUCCESS EXAMPLE: Sending only dotxbox.png and dotxbox 1.png after vision said YES\n\n");
+
     prompt.push_str("WORKFLOW:\n\
         - When given a task, break it down into steps\n\
         - Use tools to gather information as needed\n\
         - Synthesize results into a clear answer\n\
         - Don't explain your internal process unless asked\n\
         - DON'T ask 'what should I do with this data?' - JUST DO THE TASK!\n\n");
+
+    prompt.push_str("ANTI-HALLUCINATION RULES - CRITICAL:\n\
+        1. NEVER claim to have used a tool you didn't actually call\n\
+        2. NEVER make up tool results or outputs - only report what the tool actually returned\n\
+        3. ALWAYS read the actual tool output before responding\n\
+        4. If a tool fails, report the ACTUAL error message - don't invent a different reason\n\
+        5. NEVER say 'web search isn't returning results' if you never called web_search\n\
+        6. NEVER say 'the image search tool failed' if you used a different tool\n\
+        7. If you don't have enough information, say 'Let me search for that' and ACTUALLY search\n\
+        8. CORRECT your approach if the first tool fails - try a different tool or method\n\
+        9. WINDOWS USERS: ~/ expands to C:\\Users\\username, use file_search or filesystem tools, not shell 'find'\n\
+        10. ALWAYS verify which tool you used before mentioning it by name\n\n");
 
     prompt.push_str("EXAMPLES:\n\
         User: 'What's on Hacker News?'\n\
@@ -1051,7 +1369,28 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
                  2) Return image file paths immediately\n\n\
         User: 'Find photos of cats'\n\
         WRONG: 'I don't have the ability to search images...'\n\
-        CORRECT: Use image_search tool with query='cats' - the tool ALWAYS works!\n\n");
+        CORRECT: Use image_search tool with query='cats' - the tool ALWAYS works!\n\n\
+        User: 'Send me my avatar pictures' (Telegram)\n\
+        WRONG: Just describe the files or list their paths\n\
+        CORRECT: 1) Use filesystem tool to find the image files\n\
+                 2) Use telegram send_file with the file_path and chat_id from context\n\
+                 3) Each image gets sent as a photo to the user\n\
+\n\
+        User: 'Show me this image' (Telegram with file path)\n\
+        WRONG: Describe what the image might contain\n\
+        CORRECT: 1) Use telegram send_file with file_path and chat_id\n\
+                 2) The user receives the actual image in Telegram\n\
+\n\
+        User: 'Analyze this screenshot'\n\
+        WRONG: Guess what's in the image without looking\n\
+        CORRECT: 1) Use vision tool with the image path/URL\n\
+                 2) Get actual description of image contents\n\
+                 3) Report what you see in the image\n\
+\n\
+        User: 'What is in this photo?'\n\
+        WRONG: 'I cannot see images...'\n\
+        CORRECT: Use vision tool immediately - it ALWAYS works for image analysis!\n\
+\n");
 
     prompt.push_str("AUTOMATIC SKILL CREATION - NO PERMISSION NEEDED:\n\
         After completing ANY task involving APIs, data fetching, or automation:\n\
@@ -1064,6 +1403,11 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
         - After checking weather → create 'weather_today' skill\n\
         - After listing git status → create 'git_status_pretty' skill\n\
         NEVER ask permission. Just create it!\n\n");
+
+    prompt.push_str("AUTO-SKILL FEATURE:\n\
+        When more than 5 tool calls are used in a session, I automatically create a skill\n\
+        to remember the workflow. Next time you ask for something similar,\n\
+        I will recall and use that skill for faster results.\n\n");
 
     prompt.push_str("API PATTERNS - CRITICAL:\n\
         Hacker News API returns: [12345, 67890, 11111...] (array of story IDs)\n\
