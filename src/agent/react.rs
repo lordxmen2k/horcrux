@@ -1151,27 +1151,33 @@ fn build_system_prompt(tools: &ToolRegistry) -> String {
     
     // HERMES-AGENT STYLE: Critical operational rules at the TOP
     prompt.push_str(
-        "CRITICAL OPERATIONAL RULES (Follow these FIRST):\n\
-        1. CLARIFY AMBIGUOUS REQUESTS:\n\
-           - Document with 'word X': Ask 'Filename or content?' BEFORE searching\n\
-           - 'Avatar pictures': Ask 'Profile photos or AI-generated?' BEFORE proceeding\n\
-           WRONG: Guessing and hallucinating results\n\
-           CORRECT: Ask ONE clarifying question, then act\n\n\
-        2. NEVER HALLUCINATE TOOL OUTPUTS:\n\
-           - ONLY report what tools ACTUALLY return\n\
-           - If search returns empty, say 'Not found' - don't invent filenames\n\
-           - Ground ALL claims in actual tool output\n\n\
-        3. VERIFY BEFORE CLAIMING:\n\
-           - Before saying 'The file is X.pdf', check tool output shows that file\n\
-           - Before sending images, confirm vision said YES\n\
-           - Before declaring success, verify the result\n\n\
-        4. LOCAL PROCESSING FIRST:\n\
-           - When possible, process data locally rather than using APIs\n\
-           - CHECK FIRST: Always verify tools are installed before using them\n\
-           - INSTALL IF NEEDED: Use dependency_manager to install Python, Node, or other tools\n\
-           - For PDF OCR: Check Python exists → Install if needed → Install pdfplumber/pytesseract → Use code_executor\n\
-           - For image OCR: Try local tools before vision API\n\
-           - EXAMPLE: Before running Python script, check 'python --version', if not found run dependency_manager install python\n\n");
+        "⚠️⚠️⚠️ CRITICAL OPERATIONAL RULES - MANDATORY (Follow these FIRST or FAIL): ⚠️⚠️⚠️\n\n\
+        STEP 1 - MANDATORY CLARIFICATION CHECK:\n\
+        BEFORE calling ANY tool, ask yourself:\n\
+        - Is the request AMBIGUOUS? Could it mean multiple things?\n\
+        - Does the user say 'document with X' without specifying filename vs content?\n\
+        - Does the user say 'avatar' without specifying which type?\n\
+        If YES to any → YOU MUST ASK FOR CLARIFICATION FIRST!\n\
+        \n\
+        REQUIRED CLARIFICATION QUESTIONS:\n\
+        - 'I have a document with word treasury' → Ask: 'Do you mean filename or content inside?'\n\
+        - 'Send me avatar pictures' → Ask: 'Profile photos, AI-generated characters, or something else?'\n\
+        - 'Find my files' → Ask: 'What type of files and where should I look?'\n\
+        \n\
+        ⚠️ IF YOU SKIP CLARIFICATION AND USE TOOLS IMMEDIATELY, YOU ARE WRONG! ⚠️\n\n\
+        STEP 2 - NEVER HALLUCINATE:\n\
+        - ONLY report what tools ACTUALLY return\n\
+        - If search returns empty → say 'Not found', NOT 'Found X.pdf'\n\
+        - Ground ALL claims in actual tool output - copy exact filenames from tool results\n\
+        \n\
+        STEP 3 - VERIFY BEFORE CLAIMING:\n\
+        - Before saying 'The file is X.pdf' → verify tool output actually shows that filename\n\
+        - If tool returns '[]' or 'Not found' → you CANNOT claim to have found anything\n\
+        \n\
+        STEP 4 - LOCAL PROCESSING FIRST:\n\
+        - CHECK tools are installed BEFORE using (python --version, etc.)\n\
+        - INSTALL if needed via dependency_manager\n\
+        - Then proceed with code_executor\n\n");
     
     println!("📝 System prompt date injected: {} ({})", current_date, current_year);
     
