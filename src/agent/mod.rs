@@ -184,6 +184,36 @@ impl Agent {
         })
     }
 
+    /// Create agent with a pre-configured whatsapp tool (for WhatsAppHandler)
+    pub fn new_with_whatsapp(
+        config: AgentConfig,
+        whatsapp_tool: crate::integrations::whatsapp::WhatsAppTool,
+    ) -> Result<Self> {
+        let llm = LlmClient::new(config.llm_config.clone());
+        
+        if !llm.is_available() {
+            anyhow::bail!(
+                "LLM not configured. Set one of:\n\
+                - HORCRUX_LLM_URL + HORCRUX_LLM_MODEL (for Ollama)\n\
+                - OPENAI_API_KEY (for OpenAI)"
+            );
+        }
+
+        let mut tools = ToolRegistry::default_with_db(config.db_path.clone());
+        // Register the whatsapp tool with live bot injected
+        tools.register(std::sync::Arc::new(whatsapp_tool));
+        
+        let memory = ConversationMemory::new(config.db_path.clone(), config.session_id.clone());
+        let react_agent = ReActAgent::new(llm, tools, memory);
+
+        info!("Agent initialized with custom whatsapp tool, session ID: {}", config.session_id);
+
+        Ok(Self {
+            react_agent,
+            config,
+        })
+    }
+
     /// Run the agent with a single user input
     pub async fn run(&mut self, input: &str) -> Result<String> {
         self.react_agent.run(input).await
