@@ -1,6 +1,6 @@
 [package]
 name = "horcrux"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 authors = ["Your Name <you@example.com>"]
 description = "AI Agent with Knowledge Memory - Multi-platform bots, skills, and semantic search"
