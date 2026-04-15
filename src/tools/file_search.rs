@@ -1,13 +1,9 @@
-//! File Search Tool - Cross-platform file finder with filtering
-//!
-//! Supports: name patterns, extension filters, date/size filters, content search
-//! Cross-platform: Works on Windows, macOS, and Linux
+//! File Search Tool - Search inside documents (PDF, TXT, etc.)
 
 use super::{Tool, ToolResult};
 use async_trait::async_trait;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use std::path::Path;
 
 pub struct FileSearchTool;
 
@@ -15,164 +11,138 @@ impl FileSearchTool {
     pub fn new() -> Self {
         Self
     }
-    
-    /// Expand paths like ~/Documents to absolute paths
-    fn expand_path(&self, path: &str) -> PathBuf {
-        if path.starts_with("~/") {
-            if let Some(home) = dirs::home_dir() {
-                home.join(&path[2..])
-            } else {
-                PathBuf::from(path)
-            }
-        } else {
-            PathBuf::from(path)
+
+    /// Search for text inside PDF files
+    fn search_pdf(&self, pdf_path: &str, query: &str) -> anyhow::Result<bool> {
+        let query_lower = query.to_lowercase();
+        
+        // Try pdfplumber first (better text extraction)
+        if let Ok(found) = self.search_pdf_with_pdfplumber(pdf_path, &query_lower) {
+            return Ok(found);
         }
+        
+        // Fallback to PyPDF2
+        self.search_pdf_with_pypdf2(pdf_path, &query_lower)
     }
-    
-    /// Check if file matches the criteria
-    fn matches_criteria(
-        &self,
-        entry: &walkdir::DirEntry,
-        name_pattern: Option<&str>,
-        extension: Option<&str>,
-        min_size: Option<u64>,
-        max_size: Option<u64>,
-        modified_within_days: Option<u64>,
-    ) -> anyhow::Result<bool> {
-        let metadata = entry.metadata()?;
+
+    fn search_pdf_with_pdfplumber(&self, pdf_path: &str, query_lower: &str) -> anyhow::Result<bool> {
+        let output = std::process::Command::new("python")
+            .arg("-c")
+            .arg(format!(
+                "import pdfplumber; import sys; \
+                 pdf = pdfplumber.open('{}'); \
+                 text = ''.join([page.extract_text() or '' for page in pdf.pages]); \
+                 pdf.close(); \
+                 sys.exit(0 if '{}' in text.lower() else 1)",
+                pdf_path, query_lower
+            ))
+            .output()?;
         
-        // Only check files (not directories)
-        if !metadata.is_file() {
-            return Ok(false);
-        }
-        
-        let file_name = entry.file_name().to_string_lossy();
-        
-        // Check name pattern (case-insensitive)
-        if let Some(pattern) = name_pattern {
-            let pattern_lower = pattern.to_lowercase();
-            let name_lower = file_name.to_lowercase();
-            
-            // Support wildcards: * matches any sequence, ? matches single char
-            if !self.wildcard_match(&name_lower, &pattern_lower) {
-                return Ok(false);
-            }
-        }
-        
-        // Check extension (case-insensitive)
-        if let Some(ext) = extension {
-            let file_ext = Path::new(&*file_name)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if file_ext != ext.to_lowercase() {
-                return Ok(false);
-            }
-        }
-        
-        // Check size
-        let size = metadata.len();
-        if let Some(min) = min_size {
-            if size < min {
-                return Ok(false);
-            }
-        }
-        if let Some(max) = max_size {
-            if size > max {
-                return Ok(false);
-            }
-        }
-        
-        // Check modification time
-        if let Some(days) = modified_within_days {
-            if let Ok(modified) = metadata.modified() {
-                let modified_time = std::time::SystemTime::from(modified);
-                let now = std::time::SystemTime::now();
-                let duration = now.duration_since(modified_time)?;
-                let days_since = duration.as_secs() / 86400;
-                if days_since > days {
-                    return Ok(false);
-                }
-            }
-        }
-        
-        Ok(true)
+        Ok(output.status.success())
     }
-    
-    /// Simple wildcard matching (* = any sequence, ? = single char)
-    fn wildcard_match(&self, text: &str, pattern: &str) -> bool {
-        let mut text_chars = text.chars().peekable();
-        let mut pattern_chars = pattern.chars().peekable();
+
+    fn search_pdf_with_pypdf2(&self, pdf_path: &str, query_lower: &str) -> anyhow::Result<bool> {
+        let output = std::process::Command::new("python")
+            .arg("-c")
+            .arg(format!(
+                "import PyPDF2; import sys; \
+                 reader = PyPDF2.PdfReader('{}'); \
+                 text = ''.join([page.extract_text() or '' for page in reader.pages]); \
+                 sys.exit(0 if '{}' in text.lower() else 1)",
+                pdf_path, query_lower
+            ))
+            .output()?;
         
-        while let Some(p) = pattern_chars.next() {
-            match p {
-                '*' => {
-                    // Skip any sequence in text
-                    let next_p = pattern_chars.peek().copied();
-                    if next_p.is_none() {
-                        return true; // * at end matches everything
-                    }
-                    // Find the next non-star character in pattern
-                    while pattern_chars.peek() == Some(&'*') {
-                        pattern_chars.next();
-                    }
-                    let next_p = pattern_chars.peek().copied();
-                    if next_p.is_none() {
-                        return true;
-                    }
-                    // Try to match the rest
-                    let remaining_pattern: String = pattern_chars.clone().collect();
-                    let remaining_text: String = text_chars.clone().collect();
-                    // Try matching at each position
-                    for i in 0..=remaining_text.len() {
-                        if self.wildcard_match(&remaining_text[i..], &remaining_pattern) {
-                            return true;
+        Ok(output.status.success())
+    }
+
+    /// Search for text in TXT files
+    fn search_txt(&self, file_path: &str, query: &str) -> anyhow::Result<bool> {
+        let content = std::fs::read_to_string(file_path)?;
+        Ok(content.to_lowercase().contains(&query.to_lowercase()))
+    }
+
+    /// Search for text in Word documents (.docx)
+    fn search_docx(&self, file_path: &str, query: &str) -> anyhow::Result<bool> {
+        let query_lower = query.to_lowercase();
+        
+        let output = std::process::Command::new("python")
+            .arg("-c")
+            .arg(format!(
+                "import docx2txt; import sys; \
+                 text = docx2txt.process('{}'); \
+                 sys.exit(0 if '{}' in text.lower() else 1)",
+                file_path, query_lower
+            ))
+            .output()?;
+        
+        Ok(output.status.success())
+    }
+
+    /// Search for text using generic shell tools (for .doc, .rtf, etc.)
+    fn search_with_shell(&self, file_path: &str, query: &str) -> anyhow::Result<bool> {
+        let query_lower = query.to_lowercase();
+        
+        // Try strings command first (extracts text from binary files)
+        if let Ok(output) = std::process::Command::new("strings")
+            .arg(file_path)
+            .output() 
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            if text.to_lowercase().contains(&query_lower) {
+                return Ok(true);
+            }
+        }
+        
+        // Fallback to cat and grep
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("cat '{}' | grep -i '{}'", file_path, query_lower))
+            .output()?;
+        
+        Ok(output.status.success())
+    }
+
+    /// Search directory for files containing query (non-recursive for simplicity)
+    async fn search_directory(&self, dir_path: &str, query: &str) -> Vec<(String, bool)> {
+        let mut results = Vec::new();
+        let query_lower = query.to_lowercase();
+        
+        if let Ok(entries) = tokio::fs::read_dir(dir_path).await {
+            let mut entries = entries;
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                let path_str = path.to_string_lossy().to_string();
+                
+                if path.is_file() {
+                    let ext = path.extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    
+                    let found = match ext.as_str() {
+                        "pdf" => self.search_pdf(&path_str, &query_lower).unwrap_or(false),
+                        "txt" | "md" | "csv" | "json" | "xml" | "html" | "log" => {
+                            self.search_txt(&path_str, &query_lower).unwrap_or(false)
                         }
-                    }
-                    return false;
-                }
-                '?' => {
-                    // Match any single character
-                    if text_chars.next().is_none() {
-                        return false;
-                    }
-                }
-                c => {
-                    // Match exact character
-                    match text_chars.next() {
-                        Some(tc) if tc.to_lowercase().next() == Some(c.to_lowercase().next().unwrap_or(c)) => {}
-                        _ => return false,
+                        "docx" => self.search_docx(&path_str, &query_lower).unwrap_or(false),
+                        "doc" | "rtf" | "odt" | "pages" | "epub" => {
+                            self.search_with_shell(&path_str, &query_lower).unwrap_or(false)
+                        }
+                        _ => {
+                            self.search_with_shell(&path_str, &query_lower).unwrap_or(false)
+                        }
+                    };
+                    
+                    if found {
+                        results.push((path_str, true));
                     }
                 }
+                // Note: Not recursing into subdirectories to avoid async recursion issues
             }
         }
         
-        text_chars.next().is_none()
-    }
-    
-    /// Format file size for human reading
-    fn format_size(&self, size: u64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-        let mut size = size as f64;
-        let mut unit_idx = 0;
-        
-        while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-            size /= 1024.0;
-            unit_idx += 1;
-        }
-        
-        if unit_idx == 0 {
-            format!("{} {}", size as u64, UNITS[unit_idx])
-        } else {
-            format!("{:.1} {}", size, UNITS[unit_idx])
-        }
-    }
-    
-    /// Format timestamp
-    fn format_time(&self, time: std::time::SystemTime) -> String {
-        let datetime: chrono::DateTime<chrono::Local> = time.into();
-        datetime.format("%Y-%m-%d %H:%M").to_string()
+        results
     }
 }
 
@@ -181,214 +151,99 @@ impl Tool for FileSearchTool {
     fn name(&self) -> &str {
         "file_search"
     }
-    
+
     fn description(&self) -> &str {
-        "Search for files by name pattern, extension, size, or modification date. \
-         Cross-platform: Works on Windows, macOS, and Linux. \
-         Supports wildcards (* and ?) in filename patterns. \
-         Use this when you need to find files without using shell commands."
+        "Search for text inside files (PDF, TXT). \
+         Use this when user asks for documents containing specific words/phrases. \
+         Searches file CONTENTS, not filenames."
     }
-    
+
     fn parameters_schema(&self) -> Value {
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Directory to search in. Use ~/ for home directory. Default: current directory"
+                    "description": "Directory or file path to search"
                 },
-                "name_pattern": {
+                "query": {
                     "type": "string",
-                    "description": "Filename pattern with wildcards. * matches any sequence, ? matches single char. Examples: '*.pdf', 'img_*', 'report?.txt'"
-                },
-                "extension": {
-                    "type": "string",
-                    "description": "File extension to filter by (without dot). Examples: 'pdf', 'txt', 'py'"
-                },
-                "min_size": {
-                    "type": "integer",
-                    "description": "Minimum file size in bytes"
-                },
-                "max_size": {
-                    "type": "integer",
-                    "description": "Maximum file size in bytes"
-                },
-                "modified_within_days": {
-                    "type": "integer",
-                    "description": "Only show files modified within this many days"
-                },
-                "recursive": {
-                    "type": "boolean",
-                    "description": "Search subdirectories recursively. Default: true",
-                    "default": true
-                },
-                "max_results": {
-                    "type": "integer",
-                    "description": "Maximum number of results to return. Default: 100",
-                    "default": 100
+                    "description": "Text to search for inside files"
                 }
             },
-            "required": []
+            "required": ["path", "query"]
         })
     }
-    
-    async fn execute(&self, args: Value) -> Result<ToolResult, anyhow::Error> {
-        let path = args["path"].as_str().unwrap_or(".");
-        let name_pattern = args["name_pattern"].as_str();
-        let extension = args["extension"].as_str();
-        let min_size = args["min_size"].as_u64();
-        let max_size = args["max_size"].as_u64();
-        let modified_within_days = args["modified_within_days"].as_u64();
-        let recursive = args["recursive"].as_bool().unwrap_or(true);
-        let max_results = args["max_results"].as_u64().unwrap_or(100) as usize;
-        
-        // Expand path
-        let search_path = self.expand_path(path);
-        
-        // Verify path exists
-        if !search_path.exists() {
-            return Ok(ToolResult::error(format!(
-                "Path does not exist: {}\n\n💡 Hint: Use ~/ for home directory (e.g., ~/Documents)",
-                search_path.display()
-            )));
-        }
-        
-        if !search_path.is_dir() {
-            return Ok(ToolResult::error(format!(
-                "Path is not a directory: {}",
-                search_path.display()
-            )));
-        }
-        
-        let mut results = Vec::new();
-        let mut searched_count = 0;
-        
-        // Build walker
-        let walker = if recursive {
-            WalkDir::new(&search_path)
+
+    async fn execute(&self, args: Value) -> anyhow::Result<ToolResult> {
+        let path_str = args["path"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing path"))?;
+        let query = args["query"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("Missing query"))?;
+
+        // Expand ~ to home directory
+        let path_str = if path_str.starts_with("~/") {
+            dirs::home_dir()
+                .map(|home| home.join(&path_str[2..]).to_string_lossy().to_string())
+                .unwrap_or_else(|| path_str.to_string())
         } else {
-            WalkDir::new(&search_path).max_depth(1)
+            path_str.to_string()
         };
+
+        let path = Path::new(&path_str);
         
-        for entry in walker {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!("Warning: Error accessing path: {}", e);
-                    continue;
+        if !path.exists() {
+            return Ok(ToolResult::error(format!("Path not found: {}", path.display())));
+        }
+
+        let results = if path.is_file() {
+            // Single file search
+            let path_str = path.to_string_lossy().to_string();
+            let ext = path.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            
+            let found = match ext.as_str() {
+                "pdf" => self.search_pdf(&path_str, query).unwrap_or(false),
+                "txt" | "md" | "csv" | "json" | "xml" | "html" | "log" => {
+                    self.search_txt(&path_str, query).unwrap_or(false)
                 }
+                "docx" => self.search_docx(&path_str, query).unwrap_or(false),
+                _ => self.search_with_shell(&path_str, query).unwrap_or(false),
             };
             
-            searched_count += 1;
-            
-            match self.matches_criteria(
-                &entry,
-                name_pattern,
-                extension,
-                min_size,
-                max_size,
-                modified_within_days,
-            ) {
-                Ok(true) => {
-                    if let Ok(metadata) = entry.metadata() {
-                        let size = self.format_size(metadata.len());
-                        let modified = metadata.modified()
-                            .map(|t| self.format_time(t))
-                            .unwrap_or_else(|_| "Unknown".to_string());
-                        
-                        results.push(format!(
-                            "📄 {} ({}, modified: {})",
-                            entry.path().display(),
-                            size,
-                            modified
-                        ));
-                        
-                        if results.len() >= max_results {
-                            break;
-                        }
-                    }
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    eprintln!("Warning: Error checking file {}: {}", entry.path().display(), e);
-                }
-            }
-        }
-        
-        // Build output
-        let mut output = format!(
-            "🔍 File Search Results\n\
-            📂 Directory: {}\n\
-            🔎 Searched: {} items\n\
-            ✅ Found: {} matches\n\n",
-            search_path.display(),
-            searched_count,
-            results.len()
-        );
-        
-        // Add search criteria summary
-        let mut criteria = Vec::new();
-        if let Some(p) = name_pattern {
-            criteria.push(format!("name like '{}'", p));
-        }
-        if let Some(e) = extension {
-            criteria.push(format!("extension: .{}", e));
-        }
-        if min_size.is_some() || max_size.is_some() {
-            criteria.push(format!("size: {}-{} bytes", 
-                min_size.map(|s| s.to_string()).unwrap_or_else(|| "0".to_string()),
-                max_size.map(|s| s.to_string()).unwrap_or_else(|| "∞".to_string())
-            ));
-        }
-        if let Some(d) = modified_within_days {
-            criteria.push(format!("modified within {} days", d));
-        }
-        
-        if !criteria.is_empty() {
-            output.push_str(&format!("📝 Criteria: {}\n\n", criteria.join(", ")));
-        }
-        
-        if results.is_empty() {
-            output.push_str("❌ No files found matching your criteria.\n");
-            output.push_str("\n💡 Try:\n");
-            output.push_str("   - Using * wildcard for broader matches (e.g., '*.pdf')\n");
-            output.push_str("   - Checking if the directory path is correct\n");
-            output.push_str("   - Removing some filters to broaden the search\n");
+            vec![(path_str, found)]
         } else {
-            output.push_str(&results.join("\n"));
-            if results.len() >= max_results {
-                output.push_str(&format!("\n\n⚠️ Showing first {} results. Use max_results parameter to see more.", max_results));
+            // Directory search
+            self.search_directory(&path.to_string_lossy(), query).await
+        };
+
+        if results.is_empty() {
+            Ok(ToolResult::success(format!(
+                "No files found containing '{}' in {}. Note: PDFs may be scanned images that cannot be searched.",
+                query, path.display()
+            )))
+        } else {
+            let matching: Vec<String> = results
+                .iter()
+                .filter(|(_, found)| *found)
+                .map(|(path, _)| path.clone())
+                .collect();
+            
+            if matching.is_empty() {
+                Ok(ToolResult::success(format!(
+                    "Searched {} files. None contain '{}'",
+                    results.len(), query
+                )))
+            } else {
+                Ok(ToolResult::success(format!(
+                    "Found {} file(s) containing '{}':\n{}",
+                    matching.len(),
+                    query,
+                    matching.join("\n")
+                )))
             }
         }
-        
-        Ok(ToolResult::success(output))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_wildcard_match() {
-        let tool = FileSearchTool::new();
-        
-        assert!(tool.wildcard_match("test.pdf", "*.pdf"));
-        assert!(tool.wildcard_match("test.pdf", "test.*"));
-        assert!(tool.wildcard_match("test.pdf", "*.txt"));
-        assert!(tool.wildcard_match("IMG_001.jpg", "IMG_*.jpg"));
-        assert!(tool.wildcard_match("report1.txt", "report?.txt"));
-        assert!(tool.wildcard_match("report10.txt", "report*.txt"));
-        assert!(!tool.wildcard_match("test.pdf", "*.txt"));
-        assert!(!tool.wildcard_match("report10.txt", "report?.txt"));
-    }
-
-    #[test]
-    fn test_format_size() {
-        let tool = FileSearchTool::new();
-        
-        assert_eq!(tool.format_size(500), "500 B");
-        assert_eq!(tool.format_size(1536), "1.5 KB");
-        assert_eq!(tool.format_size(1048576), "1.0 MB");
     }
 }

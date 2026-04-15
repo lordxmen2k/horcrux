@@ -22,6 +22,7 @@ pub mod telegram;
 pub mod dependency_manager;
 pub mod code_executor;
 pub mod vision;
+pub mod file_search;
 
 pub use filesystem::FileSystemTool;
 pub use config_manager::ConfigManagerTool;
@@ -39,6 +40,7 @@ pub use telegram::{TelegramTool, TelegramAgentBot};
 pub use dependency_manager::DependencyManagerTool;
 pub use code_executor::CodeExecutorTool;
 pub use vision::VisionTool;
+pub use file_search::FileSearchTool;
 
 /// A tool that can be called by the agent
 #[async_trait]
@@ -176,6 +178,9 @@ impl ToolRegistry {
         
         // Register vision tool for image analysis
         registry.register(Arc::new(VisionTool::new()));
+        
+        // Register file search tool for searching inside documents
+        registry.register(Arc::new(FileSearchTool::new()));
         
         // Register Skills tools (create_skill, list_skills, etc.)
         // Try project directory first, then fall back to data dir
